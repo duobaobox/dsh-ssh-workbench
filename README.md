@@ -9,6 +9,8 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 - 适用：DSH 0.2.1-rc.1 ～ 0.2.x（`engines.dsh: >=0.2.1-rc.1 <0.3.0`）
 - 平台：macOS / Linux / Windows 上的 DSH；远程目标支持 POSIX 与 Windows（PowerShell）
 
+![远程工作台：左侧终端，右侧文件管理](docs/images/workbench.png)
+
 ## 能力
 
 | 能力 | 说明 |
@@ -50,6 +52,8 @@ npm run pack
 本地开发时，也可以在 DSH 的插件管理页直接安装本目录（Bundle 安装会读取 `package.json` 的 `dsh` 字段）。
 
 安装后在 **设置 → 远程工作台** 里添加资源。
+
+![在 DSH 插件页中的远程工作台](docs/images/plugin.png)
 
 ## 用法
 

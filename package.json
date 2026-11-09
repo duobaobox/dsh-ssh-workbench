@@ -22,7 +22,8 @@
     "locale",
     "vendor",
     "docs/quickstart.md",
-    "docs/architecture.md"
+    "docs/architecture.md",
+    "docs/images"
   ],
   "dsh": {
     "manifestVersion": 1,
