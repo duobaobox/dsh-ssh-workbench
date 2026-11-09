@@ -11,6 +11,8 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 
 ![远程工作台：左侧终端，右侧文件管理](docs/images/workbench.png)
 
+![远程 SSH 终端与 SFTP：连接到 web-1 后浏览 home 目录](docs/images/remote-workbench.png)
+
 ## 能力
 
 | 能力 | 说明 |
