@@ -1,0 +1,400 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+
+const source = fs.readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+const bundleSource = source
+
+function loadBundle(options = {}) {
+  let registration
+  const storage = new Map()
+  for (const [key, value] of Object.entries(options.localStorage ?? {})) storage.set(key, String(value))
+  const window = {
+    localStorage: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => { storage.set(key, String(value)) },
+      removeItem: (key) => { storage.delete(key) },
+    },
+    __ModuleLoader__: {
+      load(entry) {
+        registration = entry
+      },
+    },
+  }
+  // The bundle is a classic script: evaluate it with a fake window and inspect
+  // the registration it makes, exactly like the browser bundle loader does.
+  const run = new Function('window', source)
+  run(window)
+  assert.ok(registration, 'bundle did not register through window.__ModuleLoader__')
+  assert.equal(registration.id, 'dsh-ssh-workbench')
+  assert.equal(typeof registration.factory, 'function')
+  return registration
+}
+
+function makeClientContext() {
+  const registered = []
+  const effects = []
+  const services = {
+    slots: {
+      inject(slot, callback) {
+        // Contributions may be a generator that yields registrations.
+        const outcome = callback()
+        if (outcome && typeof outcome.next === 'function') {
+          let step = outcome.next()
+          while (!step.done) step = outcome.next(step.value)
+        }
+      },
+      register(options, component) {
+        registered.push({ slot: options.name, options, component })
+        return () => {}
+      },
+    },
+    locale: {
+      register() {},
+      bind() {
+        return (key) => key
+      },
+    },
+    sidebarRightTabs: {
+      register(definition) {
+        registered.push({ slot: 'sidebarRightTabs', definition })
+        return () => {}
+      },
+    },
+    inputTriggers: {
+      registerSource(source) {
+        registered.push({ slot: '@source', source })
+        return () => {}
+      },
+    },
+    uiConversation: {
+      userText: {
+        register(rule) {
+          registered.push({ slot: 'userText', rule })
+          return () => {}
+        },
+      },
+    },
+  }
+  const ctx = {
+    get(name) {
+      return services[name]
+    },
+    effect(fn) {
+      const dispose = fn()
+      effects.push(dispose)
+      return () => {}
+    },
+    inject(names, callback) {
+      const inner = {
+        get(name) {
+          return services[name]
+        },
+        effect(fn) {
+          const dispose = fn()
+          effects.push(dispose)
+          return () => {}
+        },
+      }
+      // betterSidebar is optional; only invoke the callback when it exists.
+      if (names.includes('betterSidebar') && !services.betterSidebar) return
+      callback(inner)
+    },
+  }
+  return { ctx, registered }
+}
+
+function makeRequire() {
+  const React = {
+    createElement: (type, props, ...children) => ({ type, props, children }),
+    useState: (initial) => [initial, () => {}],
+    useEffect: () => {},
+    useCallback: (fn) => fn,
+    useRef: (initial) => ({ current: initial }),
+  }
+  return (specifier) => {
+    if (specifier === 'react') return React
+    throw new Error(`unexpected require: ${specifier}`)
+  }
+}
+
+test('client bundle registers the cordis contract', () => {
+  const registration = loadBundle()
+  const exports = registration.factory(makeRequire())
+  assert.equal(exports.name, 'dsh-ssh-workbench')
+  assert.deepEqual(exports.inject, ['slots', 'locale'])
+  assert.equal(typeof exports.apply, 'function')
+})
+
+test('client apply registers settings, right-panel body and sidebar tab type', () => {
+  const { ctx, registered } = makeClientContext()
+  const exports = loadBundle().factory(makeRequire())
+  exports.apply(ctx)
+  const slots = registered.map((entry) => entry.slot)
+  assert.ok(slots.includes('settings.section'), 'missing settings.section')
+  assert.ok(slots.includes('plugins.bundle.config'), 'missing bundle config page')
+  const settingsEntry = registered.find((entry) => entry.slot === 'settings.section')
+  const settingsElement = settingsEntry.component({ t: (key) => key })
+  const settingsPage = settingsElement.type(settingsElement.props)
+  const settingsTree = settingsPage.type({ t: (key) => key, mode: 'settings' })
+  const settingsJson = JSON.stringify(settingsTree)
+  assert.match(settingsJson, /settings\.title/)
+  // Settings keeps edit/delete but not the composer Reference action.
+  assert.doesNotMatch(settingsJson, /panel\.quote/)
+  assert.ok(slots.includes('sidebar.right.pane.tab'), 'missing sidebar.right.pane.tab body')
+  assert.ok(slots.includes('sidebarRightTabs'), 'missing sidebarRightTabs registration')
+  const tabs = registered.filter((entry) => entry.slot === 'sidebarRightTabs')
+  assert.deepEqual(tabs.map((entry) => entry.definition.kind).sort(), ['sdh-file', 'sdh-files', 'sdh-servers'])
+  const serversTab = tabs.find((entry) => entry.definition.kind === 'sdh-servers')
+  assert.equal(serversTab.definition.id, 'dsh-ssh-workbench/servers')
+  const filesTab = tabs.find((entry) => entry.definition.kind === 'sdh-files')
+  // The two SSH pages share one guide card (servers + remote files menu).
+  assert.equal(serversTab.definition.guide.length, 1)
+  assert.equal(serversTab.definition.guide[0].id, 'ssh')
+  assert.equal(typeof serversTab.definition.guide[0].icon, 'function')
+  assert.equal(filesTab.definition.guide.length, 0)
+  const guideEntries = registered.filter((entry) => entry.slot === 'sidebar.right.tab.guide.entry')
+  assert.deepEqual(guideEntries.map((entry) => entry.options.key), ['dsh-ssh-workbench/servers'])
+  const guideElement = guideEntries[0].component({ t: (key) => key, title: 'SSH', description: 'Servers and remote files' })
+  const guideTree = guideElement.type(guideElement.props)
+  const guideJson = JSON.stringify(guideTree)
+  assert.match(guideJson, /SSH/)
+  assert.match(guideJson, /Servers and remote files/)
+  // The host suppresses guide descriptions for long lists; the card must too.
+  const bareElement = guideEntries[0].component({ t: (key) => key, title: 'SSH' })
+  const bareTree = bareElement.type(bareElement.props)
+  assert.doesNotMatch(JSON.stringify(bareTree), /guide\.description/)
+  const titles = registered.filter((entry) => entry.slot === 'sidebar.right.pane.tab.title')
+  assert.deepEqual(titles.map((entry) => entry.options.key).sort(), ['dsh-ssh-workbench/file', 'dsh-ssh-workbench/files', 'dsh-ssh-workbench/servers'])
+  const viewerTabs = tabs.filter((entry) => entry.definition.kind === 'sdh-file')
+  assert.equal(viewerTabs.length, 1)
+  assert.equal(viewerTabs[0].definition.multiple, true)
+  const serversTitle = titles.find((entry) => entry.options.key === 'dsh-ssh-workbench/servers')
+  const titleTree = serversTitle.component({})
+  assert.equal(titleTree.type, 'span')
+  assert.equal(titleTree.children.length, 2)
+  assert.equal(typeof titleTree.children[0].type, 'function')
+  assert.equal(titleTree.children[1].type, 'span')
+  // Components must be renderable functions.
+  for (const entry of registered.filter((item) => ['settings.section', 'sidebar.right.pane.tab'].includes(item.slot))) {
+    assert.equal(typeof entry.component, 'function')
+  }
+  assert.equal(registered.filter((entry) => entry.slot === 'sidebar.right.pane.tab').length, 3)
+  // The right-sidebar servers panel is a Luminax-style managed-resources view;
+  // it must render (with the mocked React hooks) and expose search/add rows.
+  const panel = registered.find((entry) => entry.slot === 'sidebar.right.pane.tab' && entry.options.key === 'dsh-ssh-workbench/servers')
+  assert.ok(panel, 'missing servers panel body')
+  const panelElement = panel.component({ t: (key) => key })
+  const panelTree = panelElement.type({ t: (key) => key, ...panelElement.props })
+  assert.equal(panelTree.type, 'div')
+  const panelJson = JSON.stringify(panelTree)
+  assert.match(panelJson, /panel\.search/)
+  assert.match(panelJson, /panel\.loading/)
+  // Left-rail workbench entry: the panel row plus the main page it selects.
+  const panelRow = registered.find((entry) => entry.slot === 'sidebar.panellist')
+  assert.ok(panelRow, 'missing sidebar.panellist workbench row')
+  assert.equal(panelRow.options.id, 'dsh-ssh-workbench/workbench')
+  assert.equal(typeof panelRow.component, 'function')
+  const mainPage = registered.find((entry) => entry.slot === 'main')
+  assert.ok(mainPage, 'missing workbench main page')
+  assert.equal(mainPage.options.key, 'dsh-ssh-workbench/workbench')
+  const pageElement = mainPage.component({})
+  const pageTree = pageElement.type(pageElement.props)
+  const pageJson = JSON.stringify(pageTree)
+  assert.match(pageJson, /data-sdh-workbench-page/)
+  assert.match(pageJson, /data-sdh-workbench-bar/)
+  assert.match(pageJson, /workbench\.new/)
+  // The strip vertically centers its 28px controls in the 38px bar (no top-only
+  // padding), and the "+" menu hangs under the button instead of using viewport
+  // fixed coordinates, which used to drop it over the left rail.
+  assert.match(bundleSource, /dsh-ssh-workbench-wb-strip\{box-sizing:border-box;display:flex;align-items:center;gap:8px;height:38px;flex:none;padding:0 6px 0 var\(--dsh-dockkit-strip-inline-start,10px\)/)
+  assert.match(bundleSource, /role: 'menu', style: \{ position: 'absolute', top: 38/)
+  assert.doesNotMatch(bundleSource, /role: 'menu', style: \{ top: 32/)
+  // The terminal surface uses the active terminal palette so the strip and the
+  // screen meet without a light band in dark mode.
+  assert.match(bundleSource, /props\.dark === false \? WORKBENCH_LIGHT_TERM_THEME\.background : WORKBENCH_DARK_TERM_THEME\.background/)
+  // The split gutter is one centered hairline, not a bordered 5px band (which
+  // read as two stray vertical lines next to a light terminal).
+  assert.match(bundleSource, /dsh-ssh-workbench-wb-split\{position:relative;flex:none;width:5px;cursor:col-resize\}/)
+  assert.match(bundleSource, /dsh-ssh-workbench-wb-split::after\{content:"";position:absolute;top:0;bottom:0;left:2px;width:\.5px;background:var\(--dsw-alias-border-l3\)\}/)
+  assert.doesNotMatch(bundleSource, /borderLeft: '0\.5px solid var\(--dsw-alias-border-l3\)', borderRight/)
+  // Composer bridge registration powers the "Reference" action.
+  assert.ok(slots.includes('conversation.input.activity'), 'missing composer bridge')
+  // @server mentions in sent messages use the same inline reference-chip spec as @file.
+  const serverChip = registered.find((entry) => entry.slot === 'conversation.user.text.node')
+  assert.ok(serverChip, 'missing @server user-text chip')
+  const chipJson = JSON.stringify(serverChip.component({ node: { data: { name: 'web-2' } }, raw: '@web-2' }))
+  assert.match(chipJson, /web-2/)
+  assert.match(chipJson, /business-primary/)
+  const source = registered.find((entry) => entry.slot === '@source')
+  assert.ok(source, 'missing @ source registration')
+  assert.equal(source.source.trigger, '@')
+  assert.equal(typeof source.source.candidates, 'function')
+  assert.equal(typeof source.source.onPick, 'function')
+  const picked = source.source.onPick({ candidate: { value: JSON.stringify({ name: 'web-1' }) } })
+  // Picking a server inserts a native reference chip (same path as @file),
+  // serialized back to '@web-1' for the model by the source codec.
+  assert.deepEqual(picked, { insert: { source: 'ssh-workbench', ref: '@web-1', label: 'web-1', clipboardText: '@web-1' } })
+  assert.equal(source.source.codec.serialize('@web-1') instanceof Promise, true)
+  const rule = registered.find((entry) => entry.slot === 'userText')
+  assert.ok(rule, 'missing userText matcher')
+  assert.equal(rule.rule.id, 'ssh-server')
+  assert.equal(typeof rule.rule.match, 'function')
+
+  const toolViews = registered.filter((entry) => entry.slot === 'tool.call.toolview')
+  assert.deepEqual(
+    toolViews.map((entry) => entry.options.key).sort(),
+    ['ssh_workbench_target'],
+  )
+  const execView = toolViews.find((entry) => entry.options.key === 'ssh_workbench_target')
+  const rendered = execView.component({
+    phase: 'result',
+    toolName: 'ssh_workbench_target',
+    block: {
+      call: { name: 'ssh_workbench_target', argsRaw: JSON.stringify({ server: 'web-1' }) },
+      content: [{ type: 'text', text: 'active target: web-1' }],
+    },
+  })
+  assert.equal(typeof rendered.type, 'function')
+  const row = rendered.type(rendered.props)
+  assert.equal(row.type, 'div')
+  assert.equal(row.children.length >= 2, true)
+
+  // Failed calls must expose a real details affordance (the old static
+  // "调用失败，展开查看详情" text was not clickable).
+  const failedTree = execView.component({
+    phase: 'result',
+    toolName: 'ssh_workbench_target',
+    block: {
+      call: { name: 'ssh_workbench_target', argsRaw: JSON.stringify({ server: 'web-1' }) },
+      content: [{ type: 'text', text: 'Error: the user rejected tool "ssh_workbench_target"' }],
+      isError: true,
+      error: { name: 'ToolCallRejected', code: 'REJECTED' },
+    },
+  })
+  const failedRow = failedTree.type(failedTree.props)
+  const nodes = []
+  const walk = (node) => {
+    if (!node || typeof node !== 'object') return
+    nodes.push(node)
+    if (Array.isArray(node.children)) node.children.forEach(walk)
+  }
+  walk(failedRow)
+  const toggle = nodes.find((node) => node.props && node.props['data-sdh-tool-details-toggle'] !== undefined)
+  assert.ok(toggle, 'failed tool card must render a details toggle')
+  assert.equal(toggle.type, 'button')
+  assert.equal(toggle.props['aria-expanded'], 'false')
+  assert.equal(typeof toggle.props.onClick, 'function')
+  const toggleText = []
+  const collect = (node) => {
+    if (typeof node === 'string') toggleText.push(node)
+    else if (node && Array.isArray(node.children)) node.children.forEach(collect)
+  }
+  collect(toggle)
+  assert.ok(toggleText.join('').includes('查看详情'), 'toggle should offer 查看详情')
+  // The old static label must be gone; the rejected card explains itself.
+  const allText = []
+  const collectAll = (node) => {
+    if (typeof node === 'string') allText.push(node)
+    else if (node && Array.isArray(node.children)) node.children.forEach(collectAll)
+  }
+  collectAll(failedRow)
+  const joined = allText.join(' ')
+  assert.ok(joined.includes('审批被拒绝'), 'rejected call should explain the rejection')
+  assert.ok(!joined.includes('调用失败，展开查看详情'), 'static non-clickable label must be removed')
+})
+
+test('the sidebar switch removes the workbench rail entry but keeps the rest', () => {
+  const { ctx, registered } = makeClientContext()
+  const exports = loadBundle({ localStorage: { 'dsh-ssh-workbench.sidebar.enabled': '0' } }).factory(makeRequire())
+  exports.apply(ctx)
+  const slots = registered.map((entry) => entry.slot)
+  assert.ok(slots.includes('settings.section'), 'settings section stays available')
+  assert.ok(slots.includes('plugins.bundle.config'), 'the switch page must stay reachable')
+  assert.ok(slots.includes('conversation.input.activity'), 'composer bridge is not a sidebar surface')
+  assert.ok(!slots.includes('sidebar.panellist'), 'no left rail row while the switch is off')
+  assert.ok(!slots.includes('main'), 'no workbench page while the switch is off')
+  assert.ok(slots.includes('sidebarRightTabs'), 'the right sidebar is not controlled by this switch')
+})
+
+// Regression guards for the workbench defects fixed in the v1.3.7 QA round. The
+// UI itself is hard to drive with the mocked hooks, so these pin the structural
+// contracts that the fixes rely on.
+test('workbench client fixes: preview, focus, active-tab polling, cleanup', () => {
+  // U1: the workbench wires its own preview instead of reporting "unsupported".
+  assert.match(bundleSource, /const fileActions = \{/)
+  assert.match(bundleSource, /actions: fileActions/)
+  assert.match(bundleSource, /onClose: \(\) => setPreview\(null\)/)
+  assert.match(bundleSource, /h\(RemoteFileViewer, \{ t, params: preview, onClose: \(\) => setPreview\(null\) \}\)/)
+  assert.match(bundleSource, /data-sdh-workbench-preview/)
+  // The file panel hands over the row type so links/dirs fall back gracefully.
+  assert.match(bundleSource, /type: entry\.type/)
+  // U2: no local terminal is auto-opened on mount; the empty state owns entry.
+  assert.doesNotMatch(bundleSource, /let opened = false/)
+  assert.doesNotMatch(bundleSource, /^\s*void openTab\('local'\)\s*$/m)
+  assert.match(bundleSource, /t\('workbench\.empty'\)/)
+  // U3: the xterm screen takes focus when it becomes active.
+  assert.match(bundleSource, /termRef\.current\?\.focus\(\)/)
+  assert.match(bundleSource, /resumePollRef/)
+  // P1: non-active tabs pause the long poll and abort their pending request.
+  assert.match(bundleSource, /activeRef\.current/)
+  assert.match(bundleSource, /pollAbort/)
+  assert.match(bundleSource, /typeof AbortController === 'function'/)
+  // R1: keyboard input drains through a single ordered queue.
+  assert.match(bundleSource, /const flushInput = async \(\) =>/)
+  assert.match(bundleSource, /inputQueue\.push\(data\)/)
+  // R2: stale directory responses are discarded by sequence number.
+  assert.match(bundleSource, /const loadSeqRef = useRef\(0\)/)
+  assert.match(bundleSource, /seq !== loadSeqRef\.current/)
+  // L4: the newest theme value is read from a ref when xterm is constructed.
+  assert.match(bundleSource, /darkRef\.current \? WORKBENCH_DARK_TERM_THEME/)
+  // L5: drag listeners are cleaned up and the split ratio is persisted.
+  assert.match(bundleSource, /dragCleanupRef/)
+  assert.match(bundleSource, /WORKBENCH_RATIO_KEY/)
+  // S4: unload-safe close plus orphan-open tracking.
+  assert.match(bundleSource, /navigator\.sendBeacon|nav\.sendBeacon/)
+  assert.match(bundleSource, /'pagehide'/)
+  assert.match(bundleSource, /'beforeunload'/)
+  assert.match(bundleSource, /mountedRef\.current/)
+  assert.match(bundleSource, /pendingOpensRef/)
+  // E1: known open errors map to localized copy, unknown errors stay raw.
+  assert.match(bundleSource, /workbench\.errTooManyTerminals/)
+  assert.match(bundleSource, /workbench\.errConnect/)
+  assert.match(bundleSource, /return text\s*\n\s*\}/)
+  // U4: the local file pane labels its root with the real path.
+  assert.match(bundleSource, /rootLabel: localRoot/)
+  // macOS desktop chrome: the workbench strip occupies the window top band
+  // and pads past the traffic lights / leading controls.
+  assert.match(bundleSource, /\[data-platform=darwin\] \.dsh-ssh-workbench-wb-strip/)
+  assert.match(bundleSource, /--dsh-frame-top-clearance/)
+  assert.match(bundleSource, /--dsh-frame-leading-clearance/)
+  // Host-key changes are surfaced instead of silently overwriting the trust.
+  assert.match(bundleSource, /panel\.trustChangedTitle/)
+  assert.match(bundleSource, /panel\.trustChangedButton/)
+  assert.match(bundleSource, /knownPrints/)
+  assert.match(bundleSource, /trusting\.changed/)
+  // Host-key trust copy is a plain TOFU confirmation, not an instruction
+  // requiring out-of-band verification.
+  assert.match(bundleSource, /'panel\.trustTitle': '是否信任该服务器的主机密钥？'/)
+  assert.match(bundleSource, /'panel\.trustButton': '信任'/)
+  assert.doesNotMatch(bundleSource, /已核对，信任该指纹/)
+  // U5: the remote pane asks for the login home and falls back to '/'.
+  assert.match(bundleSource, /post\('\/sftp\/home', \{ ref \}\)/)
+  assert.match(bundleSource, /activeRemoteHome \|\| '\/'/)
+})
+
+
+test('Windows local paths keep their separator in breadcrumbs and preview names', () => {
+  // One path vocabulary for POSIX and Windows: detect the separator from the
+  // root instead of assuming '/'.
+  assert.match(bundleSource, /function pathSeparatorFor\(value\)/)
+  assert.match(bundleSource, /function baseNameOf\(value\)/)
+  assert.match(bundleSource, /relative\.split\(\/\[\\\\\/\]\+\/\)/)
+  assert.match(bundleSource, /baseNameOf\(params\.path\)/)
+  assert.doesNotMatch(bundleSource, /path\.split\('\/'\)\.pop\(\)/)
+  // Resource cards show the dialect badge (Linux/Windows), not a raw token.
+  assert.match(bundleSource, /settings\.platformPosix/)
+  assert.match(bundleSource, /settings\.platformWindows/)
+  assert.match(bundleSource, /platformText\(server\.dialect \?\? server\.platform\)/)
+})

@@ -1,0 +1,90 @@
+{
+  "name": "dsh-ssh-workbench",
+  "version": "1.6.4",
+  "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*": "./locale/*"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "locale",
+    "vendor",
+    "docs/quickstart.md",
+    "docs/architecture.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "engines": {
+      "dsh": ">=0.2.1-rc.1 <0.3.0"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.5",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/schemastery": "^3.18.5",
+    "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.1-rc.1 <0.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-client-ui-renderer": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "node --import ./test/register.mjs --test test/*.test.js",
+    "pack": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\" && npm pack --ignore-scripts --pack-destination dist",
+    "test:ssh": "node --import ./test/ssh.register.mjs test/ssh.integration.mjs",
+    "test:ssh:sftp": "node --import ./test/ssh.register.mjs test/sftp.integration.mjs",
+    "bench": "node --import ./test/ssh.register.mjs test/bench/latency.mjs",
+    "test:live": "node --import ./test/register.mjs --import ./test/ssh.register.mjs test/regression/live-p0.mjs"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "ssh",
+    "remote-execution",
+    "server-management",
+    "remote-workbench",
+    "sftp",
+    "terminal",
+    "windows"
+  ],
+  "author": "duobaobox",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duobaobox/dsh-ssh-workbench.git"
+  },
+  "homepage": "https://github.com/duobaobox/dsh-ssh-workbench",
+  "bugs": {
+    "url": "https://github.com/duobaobox/dsh-ssh-workbench/issues"
+  }
+}

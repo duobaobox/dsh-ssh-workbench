@@ -1,0 +1,15 @@
+# Dependencies / artifacts
+node_modules/
+dist/
+*.tgz
+coverage/
+*.log
+.DS_Store
+
+# Local env
+.env
+.env.*
+
+# Vendored pure-JS ssh2 (shipped inside the plugin package; see vendor/NOTICE.md)
+!vendor/node_modules/
+!vendor/node_modules/**
