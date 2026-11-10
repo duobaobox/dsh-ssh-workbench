@@ -62,26 +62,24 @@ test('non-ASCII server names can be mentioned too', () => {
   assert.deepEqual(extractServerMentions('@测试机2', servers), [], 'a longer token must not match a shorter name')
 })
 
-test('applyMentions binds one target, remembers several, and keeps the current one', () => {
-  const empty = { candidates: [], active: null, version: 0, injectedVersion: -1, seeded: true }
+test('applyMentions remembers hints without selecting a target', () => {
+  const empty = { candidates: [], lastHumanId: null, version: 0, injectedVersion: -1, seeded: true }
   const one = applyMentions(empty, [SERVERS[0]])
-  assert.equal(one.active, 'web-1')
   assert.deepEqual(one.candidates, ['web-1'])
   assert.equal(one.version, 1)
+  assert.equal('active' in one, false)
   const many = applyMentions(one, [SERVERS[0], SERVERS[1]])
-  assert.equal(many.active, null, 'several mentions must not guess a target')
   assert.deepEqual(many.candidates, ['web-1', 'db-1'])
   const keep = applyMentions(many, [])
   assert.equal(keep, many, 'no mention leaves state untouched')
   const reselect = applyMentions(many, [SERVERS[2], SERVERS[0]])
-  assert.equal(reselect.active, null)
   assert.deepEqual(reselect.candidates, ['winbox', 'web-1'])
 })
 
-test('replayTargets rebuilds a resumed session target from human messages', () => {
+test('replayTargets rebuilds hints from human messages only', () => {
   const state = replayTargets([human('@web-1 看磁盘'), human('@db-1 看内存'), context('@winbox ignored')], SERVERS)
-  assert.equal(state.active, 'db-1')
   assert.deepEqual(state.candidates, ['db-1'])
+  assert.equal('active' in state, false)
 })
 
 test('findTarget resolves names and ids, and rejects unknown values', () => {
@@ -91,29 +89,14 @@ test('findTarget resolves names and ids, and rejects unknown values', () => {
   assert.equal(findTarget(SERVERS, ''), undefined)
 })
 
-test('createTargetStore binds by session and switches targets explicitly', () => {
+test('createTargetStore keeps mention hints per session', () => {
   const store = createTargetStore({ loadInventory: () => SERVERS })
   const session = { id: 's1' }
-  store.bindMentions(session, [SERVERS[0]])
-  assert.equal(store.get(session).active, 'web-1')
-
-  const switched = store.setActive(session, 'winbox', SERVERS)
-  assert.equal(switched.ok, true)
-  assert.equal(store.get(session).active, 'winbox')
-
-  const local = store.setActive(session, 'local', SERVERS)
-  assert.equal(local.ok, true)
-  assert.equal(store.get(session).active, null)
-  assert.deepEqual(store.get(session).candidates, [], 'detaching clears any pending task choice')
-
-  const unknown = store.setActive(session, 'nope', SERVERS)
-  assert.equal(unknown.ok, false)
-  assert.match(unknown.error, /unknown server/)
-
-  const disabled = store.setActive(session, 'db-1', SERVERS)
-  assert.equal(disabled.ok, false)
-  assert.match(disabled.error, /disabled/)
-
+  store.bindMentions(session, [SERVERS[0]], 'm1')
+  assert.deepEqual(store.get(session).candidates, ['web-1'])
+  store.bindMentions(session, [SERVERS[1]], 'm2')
+  assert.deepEqual(store.get(session).candidates, ['db-1'])
+  assert.equal('active' in store.get(session), false)
   store.clear(session)
   assert.equal(store.get(session), undefined)
 })
@@ -122,29 +105,16 @@ test('createTargetStore seeds a session once from history', () => {
   const store = createTargetStore({ loadInventory: () => SERVERS })
   const session = { id: 's2' }
   const state = store.ensureSeeded(session, [human('@web-1 看看')], SERVERS)
-  assert.equal(state.active, 'web-1')
+  assert.deepEqual(state.candidates, ['web-1'])
   assert.equal(state.seeded, true)
-  // A second seed call must not replay a partial list over the current state.
   const again = store.ensureSeeded(session, [human('@db-1')], SERVERS)
-  assert.equal(again.active, 'web-1')
-})
-
-test('createTargetStore tracks the router target notice', () => {
-  const store = createTargetStore({ loadInventory: () => SERVERS })
-  const session = { id: 's4' }
-  store.bindMentions(session, [SERVERS[0]])
-  const state = store.get(session)
-  assert.equal(state.notifiedVersion, -1)
-  store.markNotified(session, state.version)
-  assert.equal(store.get(session).notifiedVersion, state.version)
-  store.setActive(session, 'winbox', SERVERS)
-  assert.notEqual(store.get(session).notifiedVersion, store.get(session).version)
+  assert.deepEqual(again.candidates, ['web-1'])
 })
 
 test('createTargetStore tracks injection versions', () => {
   const store = createTargetStore({ loadInventory: () => SERVERS })
   const session = { id: 's3' }
-  store.bindMentions(session, [SERVERS[0]])
+  store.bindMentions(session, [SERVERS[0]], 'm1')
   const state = store.get(session)
   assert.notEqual(state.injectedVersion, state.version)
   store.markInjected(session, state.version)

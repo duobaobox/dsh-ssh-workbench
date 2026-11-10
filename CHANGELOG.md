@@ -2,7 +2,33 @@
 
 记录 `dsh-ssh-workbench` 的重要变更。版本号遵循语义化版本。
 
-> 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
+> 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
+
+## [2.0.0] - 2026-11-10
+
+### 执行模型：每个远程调用显式带目标
+
+- 移除会话级 active target、`ssh_workbench_target` 工具和原生 `bash` 的远程拦截。原生 `bash` / `pwsh` 现在始终只在本机运行；远程工作只有一条路：显式指定 `server`。
+- 工具矩阵统一为 `remote_bash({ server, command })`（POSIX 目标）、`remote_pwsh({ server, command })`（Windows 目标）、`remote_exec({ tasks: [{ server, command }] })`（多目标并行）；两种宿主都注册全部远程工具。
+- `@资源名` 不再改变执行状态，只作为本轮目标提示进入上下文；后续无 `@` 的追问不会把命令静默带走。切回本机不需要任何“切换目标”动作。
+- 每轮上下文始终注入纳管资源清单（名称 / 平台 / 状态）与显式 server 工具规则；无 `@` 时模型也能直接选目标，并明确禁止读取 `servers.json` 猜配置。
+- 删除旧的 `TARGET_NOT_SELECTED`、target store replay/POST `/target`、native bash router 及其测试。
+
+### 状态查询性能
+
+- `remote_exec` 新增 `probe:false`：跳过方言探测和 `timeoutGuard` 能力探测，直接用 `facts.dialect` / 记录平台判断。
+- 新增 `connectTimeoutMs`：按调用限制 SSH 建连时间，一路透传到 broker 的 `readyTimeout`；状态类批量查询可用 `probe:false + connectTimeoutMs: 4000`，避免不可达目标拖满 15–30 秒。
+- 每个 task 的报告包含 dialect、duration、stdout/stderr 截断与错误；不可达目标不再阻塞其他任务。
+
+### Dock 与统计
+
+- composer 下方 pill 改为执行账本的只读投影，结构对齐 DSH Token 用量卡：标题 + 总次数、分隔线、目标名 → 次数；不显示成功/失败、用时或模型指标，不承担切换/打开工作台。
+- 没有执行记录时不显示；不依赖 active/candidates，不再有“切本地后残留”。
+
+### 安全与测试
+
+- 黑名单 guard 从工具参数解析显式 `server`；`remote_exec` 逐 task 校验，任一 task 命中则整批拒绝；方言事实缺失时同时跑 POSIX 与 PowerShell 规则。
+- 测试重写为显式目标模型，211/211 通过；新增 `probe:false` / `connectTimeoutMs` / 资源清单上下文 / TargetDock 结构断言。
 
 ## [1.7.6] - 2026-11-10
 

@@ -11,7 +11,6 @@ import {
 } from '../lib/core/win32-adapter.js'
 import { createRemoteShellTool } from '../lib/core/remote-bash-tool.js'
 import { posixAdapter } from '../lib/core/shell-adapters.js'
-import { createTargetStore } from '../lib/core/targets.js'
 
 const CONFIG = {
   commandTimeoutMs: 1500,
@@ -71,20 +70,15 @@ function makeHarness({ runtime, servers = SERVERS, adapter = win32Adapter } = {}
     },
   }
   const merged = { ...baseRuntime, ...(runtime ?? {}) }
-  const targets = createTargetStore({ loadInventory: () => servers })
   const tool = createRemoteShellTool({
     runtime: merged,
-    targets,
     config: CONFIG,
     loadInventory: () => servers,
     adapter,
     localShellName: 'pwsh',
   })
-  const exec = (name, sessionId = 's1') => {
-    targets.setActive(sessionId, name, servers)
-    return { agent: { session: { id: sessionId } } }
-  }
-  return { tool, targets, execCalls, runtime: merged, bind: exec }
+  const exec = (sessionId = 's1') => ({ agent: { session: { id: sessionId } }, signal: { aborted: false } })
+  return { tool, execCalls, runtime: merged, exec }
 }
 
 test('the PowerShell adapter builds an encoded script command', () => {
@@ -131,8 +125,8 @@ test('PowerShell quoting doubles single quotes', () => {
 test('remote_pwsh runs a Windows target and reports target/cwd/exit/stdout', async () => {
   const h = makeHarness()
   assert.equal(h.tool.name, 'remote_pwsh')
-  const exec = h.bind('winbox')
-  const result = await h.tool.execute({ command: 'Get-ChildItem', workdir: 'C:\\Users\\alice', timeoutMs: 5000 }, exec)
+  const exec = h.exec()
+  const result = await h.tool.execute({ server: 'winbox', command: 'Get-ChildItem', workdir: 'C:\\Users\\alice', timeoutMs: 5000 }, exec)
   assert.equal(h.execCalls.length, 1)
   assert.equal(h.execCalls[0].options.timeoutMs, 5000)
   assert.match(result.text, /target: winbox \(admin@10\.0\.0\.6:22\)/)
@@ -177,8 +171,8 @@ test('remote_pwsh run_in_background returns the pid and Windows log hints', asyn
       },
     },
   })
-  const exec = h.bind('winbox')
-  const result = await h.tool.execute({ command: 'Start-Sleep 99', run_in_background: true }, exec)
+  const exec = h.exec()
+  const result = await h.tool.execute({ server: 'winbox', command: 'Start-Sleep 99', run_in_background: true }, exec)
   assert.equal(calls.length, 1)
   assert.match(calls[0].command, /^powershell\.exe .*-EncodedCommand /)
   assert.match(result.text, /pid: 31/)
@@ -188,15 +182,15 @@ test('remote_pwsh run_in_background returns the pid and Windows log hints', asyn
 
 test('remote_pwsh refuses POSIX targets instead of sending PowerShell', async () => {
   const h = makeHarness()
-  const exec = h.bind('web-1')
-  await assert.rejects(() => h.tool.execute({ command: 'Get-ChildItem' }, exec), /POSIX server/)
+  const exec = h.exec()
+  await assert.rejects(() => h.tool.execute({ server: 'web-1', command: 'Get-ChildItem' }, exec), /POSIX server/)
   assert.equal(h.execCalls.length, 0)
 })
 
 test('remote_bash refuses Windows targets and points at remote_pwsh', async () => {
   const h = makeHarness({ adapter: posixAdapter })
-  const exec = h.bind('winbox')
-  await assert.rejects(() => h.tool.execute({ command: 'uname -s' }, exec), /Windows server/)
+  const exec = h.exec()
+  await assert.rejects(() => h.tool.execute({ server: 'winbox', command: 'uname -s' }, exec), /Windows server/)
   assert.equal(h.execCalls.length, 0)
 })
 
@@ -210,8 +204,8 @@ test('a probe result overrides a wrong platform hint for the tool choice', async
       },
     },
   })
-  const exec = h.bind('web-1')
-  const result = await h.tool.execute({ command: 'Get-Date' }, exec)
+  const exec = h.exec()
+  const result = await h.tool.execute({ server: 'web-1', command: 'Get-Date' }, exec)
   assert.match(result.text, /target: web-1/)
   assert.match(decodeScript(h.execCalls[0].command), /Get-Date/)
 })
@@ -235,8 +229,8 @@ test('a Windows timeout is reported as client-side only', async () => {
       },
     },
   })
-  const exec = h.bind('winbox')
-  const result = await h.tool.execute({ command: 'Start-Sleep 99', timeoutMs: 1000 }, exec)
+  const exec = h.exec()
+  const result = await h.tool.execute({ server: 'winbox', command: 'Start-Sleep 99', timeoutMs: 1000 }, exec)
   assert.match(result.text, /outcome: timed out/)
   assert.match(result.text, /no POSIX `timeout` wrapper/)
 })
@@ -261,14 +255,12 @@ test('the PowerShell blacklist blocks disk destruction and allows reads', () => 
 })
 
 test('the guard routes remote_pwsh through the PowerShell rules', () => {
-  const targets = createTargetStore({ loadInventory: () => SERVERS })
-  targets.setActive('s1', 'winbox', SERVERS)
-  const guard = createBlacklistGuard({ targets })
+  const guard = createBlacklistGuard({ loadInventory: () => SERVERS })
   const session = { id: 's1' }
   assert.match(
-    guard({ name: 'remote_pwsh', arguments: { command: 'Format-Volume -DriveLetter C' }, agent: { session } }),
+    guard({ name: 'remote_pwsh', arguments: { server: 'winbox', command: 'Format-Volume -DriveLetter C' }, agent: { session } }),
     /blacklist|format/i,
   )
-  assert.equal(guard({ name: 'remote_pwsh', arguments: { command: 'Get-ChildItem C:\\' }, agent: { session } }), undefined)
-  assert.match(guard({ name: 'remote_bash', arguments: { command: 'rm -rf /' }, agent: { session } }), /blacklist|recursive delete/i)
+  assert.equal(guard({ name: 'remote_pwsh', arguments: { server: 'winbox', command: 'Get-ChildItem C:\\' }, agent: { session } }), undefined)
+  assert.match(guard({ name: 'remote_bash', arguments: { server: 'web-1', command: 'rm -rf /' }, agent: { session } }), /blacklist|recursive delete/i)
 })

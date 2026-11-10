@@ -40,7 +40,7 @@ function makeDeps() {
     warmed: [],
     invalidated: [],
     closedTransfers: [],
-    targetState: { active: null, candidates: [], version: 0 },
+    targetState: { candidates: [], version: 0 },
     prefs: { sidebar: true },
     terminals: [],
     localfsCalls: [],
@@ -123,20 +123,6 @@ function makeDeps() {
     },
     targets: {
       get: () => state.targetState,
-      setActive: (session, ref) => {
-        const server = state.servers.find((entry) => entry.name === ref || entry.id === ref)
-        if (!server && ref !== 'local') return { ok: false, error: `unknown resource "${ref}"` }
-        state.targetState = {
-          active: ref === 'local' ? null : server.name,
-          candidates: ref === 'local'
-            ? []
-            : state.targetState.candidates.includes(server.name)
-              ? state.targetState.candidates
-              : [server.name],
-          version: (state.targetState.version ?? 0) + 1,
-        }
-        return { ok: true, state: state.targetState }
-      },
     },
     refreshFacts: async () => ({
       hostname: 'web-1',
@@ -358,21 +344,25 @@ test('connection fetch adapter serves the Desktop carrier contract', async () =>
   assert.equal(created.server.name, 'edge-1')
 })
 
-test('the target route exposes live session data', async () => {
+test('the target route exposes mention hints without an active target', async () => {
   const { deps, state } = makeDeps()
-  state.targetState = { active: 'web-1', candidates: ['web-1'], version: 4 }
+  state.targetState = { candidates: ['web-1'], version: 4 }
+  deps.activity.entries = [
+    { at: '2026-11-10T08:00:03.000Z', kind: 'exec', server: 'web-1', sessionId: 's1', outcome: 'success', durationMs: 250 },
+  ]
   const handler = createRoutes(deps)
 
   const target = await call(handler, 'GET', '/dsh-ssh-workbench/target?session=s1')
   assert.equal(target.status, 200)
-  assert.equal(target.json.target, 'web-1')
+  assert.equal('target' in target.json, false)
+  assert.deepEqual(target.json.candidates, ['web-1'])
+  assert.equal(target.json.lastExecuted, 'web-1')
   assert.equal(target.json.version, 4)
-
 })
 
 test('target routes include this session execution stats', async () => {
   const { deps, state } = makeDeps()
-  state.targetState = { active: 'web-1', candidates: ['web-1', 'db-1'], version: 2 }
+  state.targetState = { candidates: ['web-1', 'db-1'], version: 2 }
   deps.activity.entries = [
     { at: '2026-11-10T08:00:03.000Z', kind: 'exec', server: 'db-1', sessionId: 's1', outcome: 'success', durationMs: 250 },
     { at: '2026-11-10T08:00:02.000Z', kind: 'exec', server: 'web-1', sessionId: 's1', outcome: 'failed', durationMs: 100 },
@@ -388,7 +378,7 @@ test('target routes include this session execution stats', async () => {
   assert.equal(target.json.stats.durationMs, 350)
   assert.equal(target.json.stats.averageMs, 175)
   assert.equal(target.json.stats.lastAt, '2026-11-10T08:00:03.000Z')
-  assert.deepEqual(target.json.stats.servers.map((bucket) => bucket.name), ['web-1', 'db-1'])
+  assert.deepEqual(target.json.stats.servers.map((bucket) => bucket.name), ['db-1', 'web-1'])
 })
 
 test('server update closes the target transfer sessions', async () => {

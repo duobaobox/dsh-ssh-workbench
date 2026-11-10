@@ -4,7 +4,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 
 不是又一个 SSH 客户端：它把远程执行接进 DSH 的对话与审批，把终端、SFTP 文件管理和本地文件放在同一个工作台里；安装包自包含、开箱即用。
 
-插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。对话里 `@资源名` 之后，命令在目标上执行：POSIX 宿主复用原生 `bash`（结果仍是原生终端卡片）；Windows 宿主没有内置 `bash`，改用插件自有的 `remote_bash`。Windows 目标（PowerShell）在两种宿主上都经 `remote_pwsh` 执行。原生 `bash` / `pwsh` 始终只在本机生效。没有 `@` 时一切行为不变。模型侧新增的工具是 `ssh_workbench_target`（切换目标）、`remote_exec`（显式目标、一轮并行采集多个资源）和按需出现的 `remote_bash` / `remote_pwsh`。另外保留一道**危险命令黑名单**作为兜底。
+插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。v2 起**所有远程执行都显式带目标**：原生 `bash` / `pwsh` 只在本机生效；对话里 `@资源名` 只是告诉模型“这轮可能用哪台”，模型实际调用 `remote_bash({ server, command })`、`remote_pwsh({ server, command })` 或 `remote_exec({ tasks })`。没有会话级 active target，也没有“切回本地”的状态残留：多轮对话里目标不会静默漂移。另外保留一道**危险命令黑名单**作为兜底。
 
 - 适用：DSH 0.2.1-rc.1 ～ 0.2.x（`engines.dsh: >=0.2.1-rc.1 <0.3.0`）
 - 平台：macOS / Linux / Windows 上的 DSH；远程目标支持 POSIX 与 Windows（PowerShell）
@@ -18,16 +18,17 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | 能力 | 说明 |
 |---|---|
 | 远程资源纳管 | 右侧栏/设置页：增删改查、连接测试、host key 指纹确认、密码/私钥凭据（0600 存储）；连接测试/选中目标后会采集 hostname 等信息（hostname 仅用于目标上下文；内核/磁盘只存储，不在列表展示） |
-| `@资源` 绑定 | 消息里 `@web-1` 后，命令在 web-1 上执行（资源名支持中文/非 ASCII）；`@` 多个资源时可以让模型用 `remote_exec` 一次并行执行，不必逐个切换。直接调用 shell 工具时仍需先用 `ssh_workbench_target` 选择，未选择会报 `TARGET_NOT_SELECTED` 而不是静默走本地 |
-| Windows 宿主 | Windows 上的 DSH 没有原生 `bash`（DSH 按平台禁用）：插件注册 `remote_bash` 用于 POSIX 目标，参数与行为对齐原生 bash 路由；原生 `pwsh` 仍只作用于本机 |
+| `@资源` 提示 | 消息里 `@web-1` 会让模型在工具调用里带上 `server: "web-1"`（资源名支持中文/非 ASCII）；`@` 多个资源时用 `remote_exec` 一次并行执行。`@` 只是本轮的提示，不是全局 active target；模型仍可按上下文显式选择其他资源 |
+| 执行目标 | 每个远程工具调用自己带 `server`：`remote_bash({ server, command })`、`remote_pwsh({ server, command })`、`remote_exec({ tasks: [{ server, command }] })`。不存在“当前目标”，因此切回本机只是改调原生 `bash` / `pwsh`，不需要 `ssh_workbench_target`，也不会把本地命令误发到远程 |
+| Windows 宿主 | Windows 上的 DSH 没有原生 `bash`（DSH 按平台禁用）：插件在两种宿主上都注册 `remote_bash` / `remote_pwsh` / `remote_exec`，所以 Windows 宿主也能操作 POSIX 目标；原生 `pwsh` 仍只作用于本机 |
 | Windows 目标 | Windows 目标经插件自有的 `remote_pwsh` 执行：命令包成 UTF-16LE 的 `-EncodedCommand` 脚本（避免引号转义），强制 UTF-8 输出并回传真实退出码；PowerShell 危险命令另有黑名单 |
 | 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
-| `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不读取也不改变会话的 active target。仅前台执行，长任务仍用后台工具 |
+| `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不依赖也不修改任何会话目标状态。仅前台执行，长任务仍用后台工具 |
 | `remote_bash` / `remote_pwsh` | `command`、`workdir`（绝对路径 / `~/x` / 相对路径）、`timeoutMs`、取消沿用同一套语义；POSIX 目标超时后远端命令组会被终止（远端有 `timeout` 时含 `-k` 补 KILL），Windows 目标只能客户端停止等待 |
-| 结果输出 | POSIX 宿主上的 POSIX 目标仍是 DSH 原生 bash 终端卡片；`remote_bash` / `remote_pwsh` 返回带 target / cwd / 退出码 / stdout / stderr 的文本结果 |
+| 结果输出 | 原生 `bash` / `pwsh` 保留 DSH 原生终端卡片；`remote_bash` / `remote_pwsh` / `remote_exec` 返回带 server / cwd / 退出码 / stdout / stderr 的文本结果 |
 | 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `/tmp` 日志，Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
 | 平台徽标 | 资源列表/设置页显示 **Linux / Windows** 徽标（来自连接后探测的 `facts.dialect`，不是手填字段）；连接测试结果也显示探测到的平台 |
-| 目标切换 | `ssh_workbench_target({ server: "web-1" })`；`server: "local"` 回到本机；切换后首条命令的 stderr、bash 卡片 cwd 前缀和 composer 下方目标 pill 都会标出当前目标；pill 优先显示 active target，只有多个候选且尚未选定 shell 目标时显示「N 个目标」；点开 dock 只读展示本会话各目标的远程执行次数 |
+| 执行统计 | composer 下方的 pill 只读展示本会话的远程执行次数，结构对齐 DSH Token 用量弹窗：标题「远程执行」+ 总次数、分隔线、目标名 → 次数；没有执行时不显示。它不切换目标、不打开工作台，也不显示成功/失败或用时 |
 | 远程工作台 | 左侧导航的独立页面：左侧终端（本地终端 / 远程 SSH 终端），右侧文件管理（本地用户主目录 / 远程 SFTP，远程默认打开登录 home），文件可**在工作台内直接预览**，拖动分隔条调整宽度；每个页签一个终端会话，仅活动页签轮询、非活动页签暂停并在切回时续读（UI 能力，不占模型工具） |
 | 侧边栏开关 | 插件管理 → 远程工作台 → 页面里的「在侧边栏显示远程工作台」可关闭左侧导航入口；关闭后 `@资源名` 远程执行、设置页与模型工具不受影响 |
 | 危险命令黑名单 | `rm -rf /`、`mkfs`、`dd of=/dev/*`、`fdisk/parted/wipefs`、改根目录权限、fork bomb 等同步拦截；多行脚本、`&`、引号/转义、路径变体、`$()`/`eval` 都会先还原再判断；其他命令交给 DSH 审批 |
@@ -47,7 +48,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.6.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-2.0.0.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 0.5 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
@@ -66,7 +67,7 @@ npm run pack
 @web-1 看下磁盘和内存
 ```
 
-模型会调用 `bash`（Windows 宿主上是 `remote_bash`；Windows 目标是 `remote_pwsh`），命令实际跑在目标上。`read` / `write` / `edit` / `glob` / `grep` 仍然作用于本机；要操作远程文件，直接用远程 shell 工具：
+模型会调用 `remote_bash({ server: "web-1", command })`（Windows 目标是 `remote_pwsh`），命令实际跑在目标上。`read` / `write` / `edit` / `glob` / `grep` 仍然作用于本机；要操作远程文件，直接用远程 shell 工具：
 
 ```
 @web-1 把 /etc/nginx/nginx.conf 里 worker_connections 改成 2048，改完 nginx -t
@@ -82,17 +83,13 @@ npm run pack
   ] })
 ```
 
-每个 task 自带目标，命令在各自服务器上并发执行，结果按任务顺序返回到同一条工具卡片；不会改变当前 active target。如果模型仍直接调用 `bash`，多资源且未选目标时仍会得到 `TARGET_NOT_SELECTED`，不会静默跑在本地。composer 下方的目标 pill 在多资源会话里显示「N 个目标」，单/多目标点开都是同一张只读卡：标题行显示本会话总次数，下面按目标列出执行次数；不显示成功/失败或用时，也不负责切换或打开工作台。切换 active 目标请用 `ssh_workbench_target` 或重新 `@` 资源。
+每个 task 自带目标，命令在各自服务器上并发执行，结果按任务顺序返回到同一条工具卡片；不读取也不改变任何会话目标状态。composer 下方的 pill 只读展示本会话执行次数，点开是按目标列出的计数卡；不负责切换或打开工作台。
 
-3. 切回本机：
-
-```
-ssh_workbench_target({ server: "local" })
-```
+3. 切回本机：直接让模型用原生 `bash` / `pwsh`，不需要任何“切目标”动作；远程调用只有显式带 `server` 才会发出。
 
 ## 安全模型
 
-- **黑名单兜底**：远程 `bash` / `remote_bash` / `remote_pwsh` 执行前经过同步、单调的 `ctx.tools.guard()`，命中机器毁灭类命令直接拒绝；该拦截不受审批策略影响。POSIX 规则先按 shell 语义还原（去引号/转义、剥包装、路径规范化、`$()`/`eval` 递归）再匹配，PowerShell 规则覆盖 `Format-Volume`、`Clear-Disk`、`diskpart`、`bcdedit`、整盘递归删除等；两者都只是 best-effort。
+- **黑名单兜底**：`remote_bash` / `remote_pwsh` / `remote_exec` 执行前经过同步、单调的 `ctx.tools.guard()`：每个显式 `server`（以及 `remote_exec` 的每个 task）都会按对应方言检查，命中机器毁灭类命令直接拒绝；该拦截不受审批策略影响。原生 `bash` / `pwsh` 是本地工具，不经过远程黑名单。POSIX 规则先按 shell 语义还原（去引号/转义、剥包装、路径规范化、`$()`/`eval` 递归）再匹配，PowerShell 规则覆盖 `Format-Volume`、`Clear-Disk`、`diskpart`、`bcdedit`、整盘递归删除等；两者都只是 best-effort。
 - **审批**：插件不做自己的 ask 清单，远程命令是否弹审批完全由 DSH 的会话预设（`ask` / `never`）决定。
 - **凭据**：密码存于 `~/.dsh/ssh-workbench/`（0600 文件 + 本机密钥），私钥只存路径；servers.json 0600。
 - **主机身份**：严格校验 known_hosts；未知指纹会显示 SHA256 并询问是否信任，由用户决定；信任后写入插件自己的 known_hosts。**如果服务器重装或更换导致指纹变化，连接会被拒绝并提示「服务器主机密钥已变化」**，核对后可在界面点「更新信任」。
@@ -139,7 +136,7 @@ ssh_workbench_target({ server: "local" })
 | `poolMaxServers` | `8` | 连接池最多缓存的目标数 |
 | `maxChannelsPerServer` | `6` | 单连接并发通道上限 |
 | `prewarm` | `true` | UI 选中服务器时预热连接 |
-| `targetContext` | `true` | 自动绑定 `@资源名` 并注入目标上下文；关掉后不自动绑定（仍可手动用 `ssh_workbench_target`） |
+| `targetContext` | `true` | 每轮注入纳管资源清单与 `@资源名` 提示；关掉后不注入上下文（工具仍可显式调用） |
 | `localRoot` | `""`（空 = 用户主目录） | 工作台本地文件面板与本地终端的根目录；必须是绝对路径或 `~/...`，非法值回退用户主目录 |
 
 > 右侧栏的工作台开关不在 `cordis.patch.yml` 里，而是在 **插件管理 → 远程工作台** 页面里的「在侧边栏显示远程工作台」；它只影响 UI 入口，不影响模型工具。

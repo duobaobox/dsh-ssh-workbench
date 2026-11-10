@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workbench",
-  "version": "1.7.6",
+  "version": "2.0.0",
   "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
   "type": "module",
   "main": "lib/index.js",
@@ -63,8 +63,7 @@
     "pack": "node -e \"require('node:fs').mkdirSync('dist',{recursive:true})\" && npm pack --ignore-scripts --pack-destination dist",
     "test:ssh": "node --import ./test/ssh.register.mjs test/ssh.integration.mjs",
     "test:ssh:sftp": "node --import ./test/ssh.register.mjs test/sftp.integration.mjs",
-    "bench": "node --import ./test/ssh.register.mjs test/bench/latency.mjs",
-    "test:live": "node --import ./test/register.mjs --import ./test/ssh.register.mjs test/regression/live-p0.mjs"
+    "bench": "node --import ./test/ssh.register.mjs test/bench/latency.mjs"
   },
   "license": "MIT",
   "keywords": [

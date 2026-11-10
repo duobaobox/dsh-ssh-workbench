@@ -25,6 +25,13 @@ function makeBroker(overrides = {}) {
 
 const server = { id: 'srv-1', name: 'web-1', host: '10.0.0.5', port: 22, username: 'root', platform: 'posix', authRef: { type: 'password' } }
 
+test('a per-call connectTimeoutMs clamps the connection ready timeout', async () => {
+  const { broker } = makeBroker({ connectTimeoutMs: 15000 })
+  await broker.exec(server, 'uname -s', { connectTimeoutMs: 4000 })
+  assert.equal(FakeClient.instances[0].connectConfig.readyTimeout, 4000)
+  await broker.closeAll()
+})
+
 test('broker reuses one connection per server and reports warm calls', async () => {
   const { broker } = makeBroker()
   const first = await broker.exec(server, 'echo one')

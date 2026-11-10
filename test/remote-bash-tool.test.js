@@ -1,9 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createRemoteShellTool, renderRemoteResult, resolveRemoteTarget } from '../lib/core/remote-bash-tool.js'
+import { createRemoteShellTool, renderRemoteResult, resolveExplicitTarget } from '../lib/core/remote-bash-tool.js'
 import { posixAdapter } from '../lib/core/shell-adapters.js'
-import { createTargetStore } from '../lib/core/targets.js'
 
 const SERVERS = [
   { id: 'srv_1', name: 'web-1', host: '10.0.0.5', port: 22, username: 'root', platform: 'posix', enabled: true, facts: {} },
@@ -42,50 +41,38 @@ function makeRuntime(overrides = {}) {
   return { runtime, execCalls }
 }
 
-function makeHarness({ runtime, servers = SERVERS, targets } = {}) {
+function makeHarness({ runtime, servers = SERVERS } = {}) {
   const { runtime: rt, execCalls } = makeRuntime(runtime ?? {})
-  const store = targets ?? createTargetStore({ loadInventory: () => servers })
   const activities = []
   const tool = createRemoteShellTool({
     runtime: rt,
-    targets: store,
     config: CONFIG,
     loadInventory: () => servers,
     recordActivity: (entry) => activities.push(entry),
   })
-  const bind = (name, sessionId = 's1') => {
-    store.setActive(sessionId, name, servers)
-    return { agent: { session: { id: sessionId } } }
-  }
-  return { tool, store, execCalls, activities, bind }
+  const exec = (sessionId = 's1') => ({ agent: { session: { id: sessionId } }, signal: { aborted: false } })
+  return { tool, execCalls, activities, exec }
 }
 
-test('remote_bash is a standalone tool with command/workdir/timeout parameters', () => {
+test('remote_bash is an explicit-target tool with command/workdir/timeout parameters', () => {
   const h = makeHarness()
   assert.equal(h.tool.name, 'remote_bash')
-  assert.deepEqual(Object.keys(h.tool.parameters), ['command', 'workdir', 'timeoutMs', 'run_in_background'])
+  assert.deepEqual(Object.keys(h.tool.parameters), ['server', 'command', 'workdir', 'timeoutMs', 'run_in_background'])
+  assert.equal(h.tool.parameters.server.required, true)
   assert.equal(h.tool.parameters.command.required, true)
   const rendered = h.tool.output.render({}, { text: 'hello' })
   assert.deepEqual(rendered, [{ type: 'text', text: 'hello' }])
 })
 
-test('without an active target the tool fails and never touches the runtime', async () => {
+test('without a server the tool fails and never touches the runtime', async () => {
   const h = makeHarness()
-  await assert.rejects(() => h.tool.execute({ command: 'df -h' }, { agent: { session: { id: 's1' } } }), /no active target/)
+  await assert.rejects(() => h.tool.execute({ command: 'df -h' }, h.exec()), /server is required/)
   assert.equal(h.execCalls.length, 0)
 })
 
-test('several mentioned servers refuse execution until the model picks one', async () => {
+test('a POSIX server runs over SSH and returns server/cwd/exit/stdout', async () => {
   const h = makeHarness()
-  h.store.bindMentions('s1', [SERVERS[0], SERVERS[1]])
-  await assert.rejects(() => h.tool.execute({ command: 'df -h' }, { agent: { session: { id: 's1' } } }), /several servers/)
-  assert.equal(h.execCalls.length, 0)
-})
-
-test('a POSIX target runs over SSH and returns target/cwd/exit/stdout', async () => {
-  const h = makeHarness()
-  const exec = h.bind('web-1')
-  const result = await h.tool.execute({ command: 'df -h', workdir: '~' }, exec)
+  const result = await h.tool.execute({ server: 'web-1', command: 'df -h', workdir: '~' }, h.exec())
   assert.equal(h.execCalls.length, 1)
   assert.equal(h.execCalls[0].server.name, 'web-1')
   assert.equal(h.execCalls[0].command, 'cd -- "$HOME" && df -h')
@@ -96,9 +83,11 @@ test('a POSIX target runs over SSH and returns target/cwd/exit/stdout', async ()
   assert.match(result.text, /cwd: ~/)
   assert.match(result.text, /exit code: 0/)
   assert.match(result.text, /stdout:\nok/)
-  assert.match(result.text, /\[remote\] target: web-1/)
+  assert.doesNotMatch(result.text, /\[remote\] target:/)
   assert.equal(h.activities.length, 1)
   assert.equal(h.activities[0].server, 'web-1')
+  assert.equal(h.activities[0].sessionId, 's1')
+  assert.equal(typeof h.activities[0].durationMs, 'number')
 })
 
 test('remote_bash run_in_background returns pid + log and does not wait', async () => {
@@ -119,8 +108,7 @@ test('remote_bash run_in_background returns pid + log and does not wait', async 
       },
     },
   })
-  const exec = h.bind('web-1')
-  const result = await h.tool.execute({ command: 'sleep 60', run_in_background: true }, exec)
+  const result = await h.tool.execute({ server: 'web-1', command: 'sleep 60', run_in_background: true }, h.exec())
   assert.equal(calls.length, 1)
   assert.match(calls[0].command, /nohup/)
   assert.match(result.text, /pid: 777/)
@@ -147,30 +135,22 @@ test('a non-zero exit is a normal result, not an error', async () => {
       },
     },
   })
-  const exec = h.bind('web-1')
-  const result = await h.tool.execute({ command: 'false' }, exec)
+  const result = await h.tool.execute({ server: 'web-1', command: 'false' }, h.exec())
   assert.match(result.text, /exit code: 2/)
   assert.match(result.text, /stderr:\nboom/)
 })
 
-test('a Windows target is rejected with a dialect explanation', async () => {
+test('a Windows server is rejected with a dialect explanation', async () => {
   const h = makeHarness()
-  const exec = h.bind('winbox')
-  await assert.rejects(() => h.tool.execute({ command: 'Get-Location' }, exec), /Windows server.*POSIX/)
+  await assert.rejects(() => h.tool.execute({ server: 'winbox', command: 'Get-Location' }, h.exec()), /Windows server.*POSIX/)
   assert.equal(h.execCalls.length, 0)
 })
 
-test('a disabled target and an invalid workdir fail before SSH', async () => {
+test('disabled and unknown servers and invalid workdirs fail before SSH', async () => {
   const h = makeHarness()
-  // bindMentions does not check enabled (the selector tool does), so this
-  // reproduces an inventory that changed after the target was bound.
-  h.store.bindMentions('s1', [SERVERS[2]])
-  const disabled = { agent: { session: { id: 's1' } } }
-  await assert.rejects(() => h.tool.execute({ command: 'df -h' }, disabled), /disabled/)
-  assert.equal(h.execCalls.length, 0)
-
-  const exec = h.bind('web-1')
-  await assert.rejects(() => h.tool.execute({ command: 'df -h', workdir: 'a\nb' }, exec), /newlines/)
+  await assert.rejects(() => h.tool.execute({ server: 'off', command: 'df -h' }, h.exec()), /disabled/)
+  await assert.rejects(() => h.tool.execute({ server: 'nope', command: 'df -h' }, h.exec()), /unknown/)
+  await assert.rejects(() => h.tool.execute({ server: 'web-1', command: 'df -h', workdir: 'a\nb' }, h.exec()), /newlines/)
   assert.equal(h.execCalls.length, 0)
 })
 
@@ -194,8 +174,7 @@ test('the remote timeout wrapper uses the probed capability', async () => {
       },
     },
   })
-  const exec = h.bind('web-1')
-  const result = await h.tool.execute({ command: 'sleep 99', timeoutMs: 3000 }, exec)
+  const result = await h.tool.execute({ server: 'web-1', command: 'sleep 99', timeoutMs: 3000 }, h.exec())
   assert.match(h.execCalls[0].command, /^timeout -k 5 3 /)
   assert.match(result.text, /outcome: timed out/)
   assert.match(result.text, /\[remote\] timeout/)
@@ -222,20 +201,18 @@ test('a transport failure becomes a tool error with the SSH detail', async () =>
       },
     },
   })
-  const exec = h.bind('web-1')
-  await assert.rejects(() => h.tool.execute({ command: 'df -h' }, exec), /SSH_CONNECT_FAILED.*check the network/s)
+  await assert.rejects(() => h.tool.execute({ server: 'web-1', command: 'df -h' }, h.exec()), /SSH_CONNECT_FAILED.*check the network/s)
 })
 
-test('resolveRemoteTarget rejects Windows targets for the POSIX adapter', async () => {
-  const store = createTargetStore({ loadInventory: () => SERVERS })
-  store.setActive('s1', 'winbox', SERVERS)
+test('resolveExplicitTarget rejects Windows targets for the POSIX adapter', async () => {
   await assert.rejects(
     () =>
-      resolveRemoteTarget({
+      resolveExplicitTarget({
         exec: { agent: { session: { id: 's1' } } },
-        targets: store,
         loadInventory: () => SERVERS,
         adapter: posixAdapter,
+        runtime: {},
+        serverRef: 'winbox',
       }),
     /Windows server/,
   )

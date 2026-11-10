@@ -119,20 +119,18 @@ test('plugin exports the cordis contract', () => {
   assert.equal(typeof plugin.Config, 'object')
 })
 
-test('apply registers the target selector plus the Windows-target shell on a POSIX Host', () => {
+test('apply registers explicit-target remote tools on both Hosts', () => {
   const h = makeHarness()
-  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_exec', 'remote_pwsh', 'ssh_workbench_target'])
-  const targetTool = h.tools.find((tool) => tool.name === 'ssh_workbench_target')
-  assert.deepEqual(Object.keys(targetTool.parameters), ['server'])
+  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_exec', 'remote_pwsh'])
+  const remoteBash = h.tools.find((tool) => tool.name === 'remote_bash')
+  assert.deepEqual(Object.keys(remoteBash.parameters), ['server', 'command', 'workdir', 'timeoutMs', 'run_in_background'])
   const remoteExec = h.tools.find((tool) => tool.name === 'remote_exec')
-  assert.deepEqual(Object.keys(remoteExec.parameters), ['tasks', 'concurrency'])
+  assert.deepEqual(Object.keys(remoteExec.parameters), ['tasks', 'concurrency', 'probe', 'connectTimeoutMs'])
   assert.equal(remoteExec.isConcurrencySafe({}), true)
   assert.equal(h.guards.length, 1)
-  assert.equal(listen(h, 'tools/execute').length, 1)
+  assert.equal(listen(h, 'tools/execute').length, 0, 'native bash is no longer intercepted')
   assert.equal(listen(h, 'agent/pre-step').length, 1)
   assert.equal(listen(h, 'agent/disposed').length, 1)
-  // No prompt section, no terminal backend, no per-tool approval gate.
-  assert.equal(h.injected.some((names) => names.includes('terminals')), false)
 })
 
 test('publicConfig exposes only live settings', () => {
@@ -147,85 +145,59 @@ test('publicConfig exposes only live settings', () => {
   assert.equal('httpProbeAllowedHosts' in config, false)
 })
 
-test('an @mention binds the session and bash then executes remotely', async () => {
+test('pre-step injects the resource context without an @mention', async () => {
   const h = makeHarness()
   const [preStep] = listen(h, 'agent/pre-step')
   const session = { id: 's1', deriveMessages: () => [] }
   const decision = await preStep(
     { agent: { session }, turn: 1, step: 1, signal: { aborted: false } },
-    async () => ({ kind: 'enter', messages: [human('@web-1 df -h')] }),
+    async () => ({ kind: 'enter', messages: [human('看看磁盘')] }),
   )
   assert.equal(decision.messages.length, 2)
+  const text = decision.messages[1].content.map((block) => block.text ?? '').join('\n')
+  assert.match(text, /Managed remote resources/)
+  assert.match(text, /remote_bash/)
+  assert.match(text, /remote_exec/)
+  assert.match(text, /web-1/)
+})
 
-  const [execute] = listen(h, 'tools/execute')
-  const signal = { aborted: false }
-  let nextCalls = 0
-  const next = async () => {
-    nextCalls += 1
-    return { value: 'native' }
-  }
-  const result = await execute({ name: 'bash', arguments: { command: 'df -h' }, agent: { session }, signal }, next)
-  assert.equal(nextCalls, 0)
-  assert.equal(result.value.kind, 'foreground')
+test('remote_bash executes on its explicit server and leaves local work alone', async () => {
+  const h = makeHarness()
+  const remoteBash = h.tools.find((tool) => tool.name === 'remote_bash')
+  const session = { id: 's1' }
+  const result = await remoteBash.execute(
+    { server: 'web-1', command: 'df -h' },
+    { agent: { session }, signal: { aborted: false } },
+  )
+  assert.match(result.text, /web-1/)
   assert.equal(h.execCalls.length, 1)
   assert.equal(h.execCalls[0].server.name, 'web-1')
   assert.equal(h.execCalls[0].command, 'df -h')
-
-  // Other tools and local sessions still fall through.
-  await execute({ name: 'read', arguments: {}, agent: { session } }, next)
-  await execute({ name: 'bash', arguments: { command: 'df -h' }, agent: { session: { id: 'other' } } }, next)
-  assert.equal(nextCalls, 2)
+  await assert.rejects(
+    () => remoteBash.execute({ server: 'nope', command: 'df -h' }, { agent: { session }, signal: { aborted: false } }),
+    /unknown .*server/,
+  )
 })
 
-test('the guard blocks destructive commands only while a remote target is bound', async () => {
+test('the guard resolves the explicit server, never the local shell', () => {
   const h = makeHarness()
-  const [preStep] = listen(h, 'agent/pre-step')
-  const session = { id: 's1', deriveMessages: () => [] }
   const [guard] = h.guards
+  const session = { id: 's1' }
+  assert.match(
+    guard({ name: 'remote_bash', arguments: { server: 'web-1', command: 'rm -rf /' }, agent: { session } }),
+    /blocked/,
+  )
+  assert.equal(guard({ name: 'remote_bash', arguments: { server: 'web-1', command: 'df -h' }, agent: { session } }), undefined)
   assert.equal(guard({ name: 'bash', arguments: { command: 'rm -rf /' }, agent: { session } }), undefined)
-
-  await preStep(
-    { agent: { session }, turn: 1, step: 1, signal: { aborted: false } },
-    async () => ({ kind: 'enter', messages: [human('@web-1 看下磁盘')] }),
-  )
-  assert.match(guard({ name: 'bash', arguments: { command: 'rm -rf /' }, agent: { session } }), /blacklist|recursive delete/i)
-  assert.equal(guard({ name: 'bash', arguments: { command: 'df -h' }, agent: { session } }), undefined)
 })
 
-test('the target tool switches and detaches the session target', async () => {
+test('remote_exec validates every task before executing', async () => {
   const h = makeHarness()
-  const [tool] = h.tools
-  const session = { id: 's1', deriveMessages: () => [] }
-  const exec = { agent: { session } }
-
-  const bound = await tool.execute({ server: 'web-1' }, exec)
-  assert.match(bound.text, /active target: web-1/)
-
-  const detached = await tool.execute({ server: 'local' }, exec)
-  assert.match(detached.text, /active target: local/)
-
-  await assert.rejects(() => tool.execute({ server: 'nope' }, exec), /unknown server/)
-  await assert.rejects(() => tool.execute({ server: 'web-2' }, exec), /disabled/)
-  await assert.rejects(() => tool.execute({ server: 'web-1' }, {}), /agent session/)
-})
-
-test('switching back to local returns bash to the native tool body', async () => {
-  const h = makeHarness()
-  const [tool] = h.tools
-  const [execute] = listen(h, 'tools/execute')
-  const session = { id: 's1', deriveMessages: () => [] }
-  await tool.execute({ server: 'web-1' }, { agent: { session } })
-  await tool.execute({ server: 'local' }, { agent: { session } })
-  let nextCalls = 0
-  const result = await execute(
-    { name: 'bash', arguments: { command: 'df -h' }, agent: { session } },
-    async () => {
-      nextCalls += 1
-      return { value: 'native' }
-    },
+  const remoteExec = h.tools.find((tool) => tool.name === 'remote_exec')
+  await assert.rejects(
+    () => remoteExec.execute({ tasks: [{ server: 'web-1', command: 'df -h' }, { server: 'nope', command: 'x' }] }, { agent: { session: { id: 's1' } } }),
+    /unknown .*server/,
   )
-  assert.deepEqual(result, { value: 'native' })
-  assert.equal(nextCalls, 1)
   assert.equal(h.execCalls.length, 0)
 })
 
@@ -241,41 +213,8 @@ test('workbench local root defaults to the user home and supports an override', 
   assert.equal(plugin.resolveLocalRoot({ localRoot: 'relative/path' }), os.homedir())
 })
 
-test('Windows Hosts register remote_bash instead of a native-bash router', async () => {
+test('Windows Hosts register the same explicit-target tools', () => {
   const h = makeHarness({ hostPlatform: 'win32' })
-  assert.deepEqual(
-    h.tools.map((tool) => tool.name).sort(),
-    ['remote_bash', 'remote_exec', 'remote_pwsh', 'ssh_workbench_target'],
-    'win32 has no native bash tool to intercept',
-  )
+  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_exec', 'remote_pwsh'])
   assert.equal(listen(h, 'tools/execute').length, 0)
-
-  const session = { id: 's1', deriveMessages: () => [] }
-  const targetTool = h.tools.find((tool) => tool.name === 'ssh_workbench_target')
-  const remoteTool = h.tools.find((tool) => tool.name === 'remote_bash')
-
-  await targetTool.execute({ server: 'web-1' }, { agent: { session } })
-  const result = await remoteTool.execute({ command: 'df -h' }, { agent: { session } })
-  assert.equal(h.execCalls.length, 1)
-  assert.match(result.text, /target: web-1/)
-  assert.match(result.text, /exit code: 0/)
-
-  // The fallback blacklist covers the plugin-owned tool too.
-  const [guard] = h.guards
-  assert.match(
-    guard({ name: 'remote_bash', arguments: { command: 'rm -rf /' }, agent: { session } }),
-    /blacklist|recursive delete/i,
-  )
-
-  // The injected context names the tool the model really has on this Host.
-  const preStep = h.listeners.filter((entry) => entry.event === 'agent/pre-step').map((entry) => entry.handler)[0]
-  assert.ok(preStep)
-  const decision = await preStep(
-    { agent: { session }, turn: 1, step: 1, signal: { aborted: false } },
-    async () => ({ kind: 'enter', messages: [human('@web-1 df -h')] }),
-  )
-  const injected = decision.messages.at(-1)
-  assert.equal(injected.source.kind, 'ssh-workbench-target')
-  assert.match(injected.content[0].text, /remote_bash tool runs POSIX shell commands on web-1/)
-  assert.match(injected.content[0].text, /The native pwsh tool always runs on the local DSH host/)
 })

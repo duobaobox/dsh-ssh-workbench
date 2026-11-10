@@ -36,7 +36,8 @@ export class FakeClient extends EventEmitter {
     FakeClient.instances.push(this)
   }
 
-  connect() {
+  connect(config) {
+    this.connectConfig = config
     setImmediate(() => {
       this.connected = true
       this.emit('ready')

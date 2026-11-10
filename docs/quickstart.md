@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.7.6.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-2.0.0.tgz`。安装后重启/重载插件。
 
 发布包自带纯 JS 的 SSH 依赖，安装过程不需要编译（不需要 Xcode Command Line Tools）、也不额外下载 npm 包，离线机器同样可以安装。
 
@@ -32,7 +32,7 @@ npm run pack
 @web-1 把 /etc/nginx/nginx.conf 的 worker_connections 改成 2048，然后 nginx -t
 ```
 
-模型会调用原生 `bash`（Windows 宿主上是 `remote_bash`），命令实际在 web-1 上执行；POSIX 宿主的结果卡片与本地 bash 一致（退出码、超时、截断）。
+模型会调用 `remote_bash({ server: "web-1", command })`（Windows 目标是 `remote_pwsh`），命令实际在 web-1 上执行；`@` 只是告诉模型这一轮的目标，不产生全局状态。原生 `bash` / `pwsh` 始终在本机运行，所以想查本机时不需要“切回来”。
 
 ## 4. 多目标
 
@@ -49,9 +49,9 @@ remote_exec({ tasks: [
 ] })
 ```
 
-每个 task 自己指定目标，命令在各自服务器上并发执行，结果按任务顺序返回；这不会改变当前 active target。如果模型仍直接调用 `bash`，一次提到多个资源后当前目标会先被清空，在调用 `ssh_workbench_target` 选择之前会返回 `TARGET_NOT_SELECTED` 错误（不会静默在本机执行）。资源名支持中文/非 ASCII（如 `@测试机`）。
+每个 task 自己指定目标，命令在各自服务器上并发执行，结果按任务顺序返回；没有会话级 active target，所以不存在“切目标”状态，也不会把后续本地命令误发到远程。资源名支持中文/非 ASCII（如 `@测试机`）。
 
-composer 下方的目标 pill 在单/多目标时都可以点开：卡片标题显示本会话总次数，下面按目标列出执行次数。它是只读统计，不负责切换 active 或打开工作台；切换目标用 `ssh_workbench_target` 或重新 `@` 资源，终端/文件从左侧「远程工作台」进入。
+composer 下方的 pill 只读展示本会话各目标的远程执行次数，结构对齐 DSH 的 Token 用量卡（标题 + 总数、分隔线、目标名 → 次数）；它不切换目标、不打开工作台。终端/文件从左侧「远程工作台」进入。
 
 ## 5. 远程工作台
 
@@ -76,13 +76,13 @@ composer 下方的目标 pill 在单/多目标时都可以点开：卡片标题�
 远程命令的 stdin 在启动后立即关闭（等价 `</dev/null`），读 stdin 的命令会立刻得到 EOF，不会挂到超时。
 
 **怎么确认命令跑在哪台机器？**
-目标切换后的第一条远程命令会带有目标提示（原生 bash 卡片显示 stderr 行与 cwd 前缀，如 `[remote] target: web-1 (...)`、`web-1:/var/log`；远程 shell 工具在结果文本里带 target/cwd）；composer 下方参数行常驻显示当前目标。也可以点 `ssh_workbench_target` 选 `local` 回到本机。
+每个远程工具结果都带 server / target / cwd（如 `web-1:/var/log`），工具卡片也会显示执行的资源；composer 下方的 pill 只统计本会话执行次数。原生 `bash` / `pwsh` 的结果永远来自本机。
 
 **能不能一次让多个资源并行执行？**
-可以，让模型调用 `remote_exec`：每个 task 显式带 `server`，默认并发 4、最多 8，单次最多 8 个 task；每个任务独立超时、独立输出、互不污染，结果按输入顺序返回。它只支持前台命令，长任务仍走后台工具。直接调用 `bash` / `remote_bash` / `remote_pwsh` 时仍受单 active target 限制，需要先切换目标。
+可以，让模型调用 `remote_exec`：每个 task 显式带 `server`，默认并发 4、最多 8，单次最多 8 个 task；每个任务独立超时、独立输出、互不污染，结果按输入顺序返回。它只支持前台命令，长任务仍走后台工具。`remote_bash` / `remote_pwsh` 也各自显式带 `server`，不存在需要先切换的单 active target。
 
 **怎么跑长时间任务 / 后台服务？**
-让模型带 `run_in_background: true` 调用远程 shell 工具（`remote_bash` / `remote_pwsh`，POSIX 宿主上的原生 `bash` 路由同样支持）。工具会立刻返回远端 pid 和日志路径：
+让模型带 `run_in_background: true` 调用远程 shell 工具（`remote_bash` / `remote_pwsh`）。工具会立刻返回远端 pid 和日志路径：
 - POSIX：`tail -f <log>` 看输出，`kill <pid>` 停止；
 - Windows：`Get-Content -LiteralPath '<log>' -Wait` 看输出，`Stop-Process -Id <pid> -Force` 停止。
 后台进程与本次工具调用脱离，调用返回后继续运行；`timeoutMs` 只约束启动调用本身。它不是 DSH 本地 job，`job_*` 工具看不到它。

@@ -243,66 +243,7 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   assert.equal(typeof rule.rule.match, 'function')
 
   const toolViews = registered.filter((entry) => entry.slot === 'tool.call.toolview')
-  assert.deepEqual(
-    toolViews.map((entry) => entry.options.key).sort(),
-    ['ssh_workbench_target'],
-  )
-  const execView = toolViews.find((entry) => entry.options.key === 'ssh_workbench_target')
-  const rendered = execView.component({
-    phase: 'result',
-    toolName: 'ssh_workbench_target',
-    block: {
-      call: { name: 'ssh_workbench_target', argsRaw: JSON.stringify({ server: 'web-1' }) },
-      content: [{ type: 'text', text: 'active target: web-1' }],
-    },
-  })
-  assert.equal(typeof rendered.type, 'function')
-  const row = rendered.type(rendered.props)
-  assert.equal(row.type, 'div')
-  assert.equal(row.children.length >= 2, true)
-
-  // Failed calls must expose a real details affordance (the old static
-  // "调用失败，展开查看详情" text was not clickable).
-  const failedTree = execView.component({
-    phase: 'result',
-    toolName: 'ssh_workbench_target',
-    block: {
-      call: { name: 'ssh_workbench_target', argsRaw: JSON.stringify({ server: 'web-1' }) },
-      content: [{ type: 'text', text: 'Error: the user rejected tool "ssh_workbench_target"' }],
-      isError: true,
-      error: { name: 'ToolCallRejected', code: 'REJECTED' },
-    },
-  })
-  const failedRow = failedTree.type(failedTree.props)
-  const nodes = []
-  const walk = (node) => {
-    if (!node || typeof node !== 'object') return
-    nodes.push(node)
-    if (Array.isArray(node.children)) node.children.forEach(walk)
-  }
-  walk(failedRow)
-  const toggle = nodes.find((node) => node.props && node.props['data-sdh-tool-details-toggle'] !== undefined)
-  assert.ok(toggle, 'failed tool card must render a details toggle')
-  assert.equal(toggle.type, 'button')
-  assert.equal(toggle.props['aria-expanded'], 'false')
-  assert.equal(typeof toggle.props.onClick, 'function')
-  const toggleText = []
-  const collect = (node) => {
-    if (typeof node === 'string') toggleText.push(node)
-    else if (node && Array.isArray(node.children)) node.children.forEach(collect)
-  }
-  collect(toggle)
-  assert.ok(toggleText.join('').includes('查看详情'), 'toggle should offer 查看详情')
-  // The old static label must be gone; the rejected card explains itself.
-  const allText = []
-  const collectAll = (node) => {
-    if (typeof node === 'string') allText.push(node)
-    else if (node && Array.isArray(node.children)) node.children.forEach(collectAll)
-  }
-  collectAll(failedRow)
-  const joined = allText.join(' ')
-  assert.ok(joined.includes('审批被拒绝'), 'rejected call should explain the rejection')
-  assert.ok(!joined.includes('调用失败，展开查看详情'), 'static non-clickable label must be removed')
+  assert.deepEqual(toolViews.map((entry) => entry.options.key), [], 'v2 has no target-selector tool')
 })
 
 test('the sidebar switch removes the workbench rail entry but keeps the rest', () => {
@@ -399,11 +340,11 @@ test('Windows local paths keep their separator in breadcrumbs and preview names'
   assert.match(bundleSource, /platformText\(server\.dialect \?\? server\.platform\)/)
 })
 
-test('the composer target dock mirrors the usage card', () => {
+test('the composer execution dock mirrors the usage card', () => {
+  assert.match(bundleSource, /'target\.execChip'/)
+  assert.match(bundleSource, /'target\.execTitle'/)
   assert.match(bundleSource, /'target\.popTitle'/)
-  assert.match(bundleSource, /'target\.multiChip'/)
   assert.match(bundleSource, /'target\.rowCount'/)
-  assert.match(bundleSource, /const multi = !target && names\.length > 1/)
   assert.match(bundleSource, /'aria-haspopup': 'dialog'/)
   assert.match(bundleSource, /data-sdh-target-dock/)
   // The panel is portaled to body so a composer stacking context cannot hide it.
@@ -413,21 +354,16 @@ test('the composer target dock mirrors the usage card', () => {
   assert.match(bundleSource, /dsh-ssh-workbench-target-title\{display:flex;justify-content:space-between;gap:16px;margin-bottom:8px/)
   assert.match(bundleSource, /dsh-ssh-workbench-target-rule\{border-top:\.5px solid var\(--dsw-alias-border-l2\);margin-bottom:10px\}/)
   assert.match(bundleSource, /dsh-ssh-workbench-target-details\{display:grid;grid-template-columns:minmax\(76px,auto\) minmax\(0,1fr\);gap:6px 16px/)
-  assert.doesNotMatch(bundleSource, /target\.openWorkspace/)
+  // Read-only projection of the execution ledger: no active target, no switch.
   assert.doesNotMatch(bundleSource, /post\('\/target'/)
-  assert.doesNotMatch(bundleSource, /menuitemradio/)
-  // Visibility follows the current target/candidates, not historical stats.
-  assert.match(bundleSource, /Historical stats\s*\n\s*\/\/ must not keep it visible/)
-  assert.doesNotMatch(bundleSource, /for \(const bucket of statsServers\) \{[\s\S]{0,200}?names\.push/)
+  assert.doesNotMatch(bundleSource, /Historical stats/)
   assert.doesNotMatch(bundleSource, /target-row-check/)
-  assert.doesNotMatch(bundleSource, /formatExecutionDuration/)
-  assert.doesNotMatch(bundleSource, /target\.statsOutcome/)
-  // Read-only dock does not need a second inventory request.
+  assert.doesNotMatch(bundleSource, /target-badge/)
   const dockStart = bundleSource.indexOf('function TargetDock')
   const dockEnd = bundleSource.indexOf('Insert one native reference chip', dockStart)
   assert.ok(dockStart >= 0 && dockEnd > dockStart)
   const dockSource = bundleSource.slice(dockStart, dockEnd)
+  assert.match(dockSource, /const rows = statsServers\.filter/)
+  assert.match(dockSource, /rows\.length === 0 \|\| total === 0/)
   assert.doesNotMatch(dockSource, /api\('\/servers'/)
-  assert.doesNotMatch(dockSource, /primitives\.Menu/)
-  assert.doesNotMatch(dockSource, /target-badge/)
 })

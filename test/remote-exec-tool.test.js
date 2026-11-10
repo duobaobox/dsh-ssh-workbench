@@ -60,13 +60,13 @@ function makeHarness({ exec } = {}) {
     loadInventory: () => SERVERS,
     recordActivity: (entry) => activities.push(entry),
   })
-  return { tool, calls, activities, getMaxActive: () => maxActive }
+  return { tool, runtime, calls, activities, getMaxActive: () => maxActive }
 }
 
 test('remote_exec exposes array tasks and a concurrency hint', () => {
   const { tool } = makeHarness()
   assert.equal(tool.name, REMOTE_EXEC_TOOL_NAME)
-  assert.deepEqual(Object.keys(tool.parameters), ['tasks', 'concurrency'])
+  assert.deepEqual(Object.keys(tool.parameters), ['tasks', 'concurrency', 'probe', 'connectTimeoutMs'])
   assert.equal(tool.parameters.tasks.required, true)
   assert.equal(tool.parameters.tasks.items.type, 'object')
   assert.deepEqual(Object.keys(tool.parameters.tasks.items.properties), ['server', 'command', 'workdir', 'timeoutMs'])
@@ -111,7 +111,7 @@ test('a bad task rejects the whole batch before any command starts', async () =>
         { server: 'missing', command: 'uname -s' },
       ],
     }),
-    /remote_exec validation failed:[\s\S]*task 2: unknown server "missing"/,
+    /remote_exec validation failed:[\s\S]*unknown .*server "missing"/,
   )
   assert.equal(h.calls.length, 0)
   assert.equal(h.activities.length, 0)
@@ -122,7 +122,7 @@ test('remote_exec refuses local, disabled and empty tasks', async () => {
   await assert.rejects(() => h.tool.execute({ tasks: [] }), /at least one task/)
   await assert.rejects(
     () => h.tool.execute({ tasks: [{ server: 'local', command: 'pwd' }] }),
-    /managed remote resources/,
+    /not a remote resource/,
   )
   await assert.rejects(
     () => h.tool.execute({ tasks: [{ server: 'off', command: 'pwd' }] }),
@@ -160,7 +160,7 @@ test('one failed task does not discard the other task results', async () => {
   assert.match(result.text, /\[2\] winbox[\s\S]*error: connection reset/)
 })
 
-test('activity records a per-task outcome without changing the active target contract', async () => {
+test('activity records a per-task outcome', async () => {
   const h = makeHarness({
     exec: async () => ({
       outcome: 'failed',
@@ -177,6 +177,23 @@ test('activity records a per-task outcome without changing the active target con
   assert.match(result.text, /SSH_CHANNEL_FAILED: permission denied/)
   assert.equal(h.activities.length, 1)
   assert.equal(h.activities[0].outcome, 'failed (SSH_CHANNEL_FAILED)')
+})
+
+test('probe:false skips dialect and timeout probes and passes the connection deadline', async () => {
+  const h = makeHarness()
+  let probes = 0
+  h.runtime.probeDialect = async () => { probes += 1; return 'posix' }
+  h.runtime.timeoutGuard = async () => { probes += 1; return 'kill' }
+  const result = await h.tool.execute({
+    tasks: [{ server: 'web-1', command: 'uname -s' }],
+    probe: false,
+    connectTimeoutMs: 4000,
+  })
+  assert.equal(probes, 0)
+  assert.equal(h.calls.length, 1)
+  assert.equal(h.calls[0].options.connectTimeoutMs, 4000)
+  assert.doesNotMatch(h.calls[0].command, /^timeout /)
+  assert.match(result.text, /web-1:ok/)
 })
 
 test('the requested concurrency is capped by the configured batch limit', async () => {

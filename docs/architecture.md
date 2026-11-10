@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.6）
+# SSH Workbench（dsh-ssh-workbench）架构（v2.0.0）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -6,16 +6,17 @@
 
 ```
 lib/
-├── index.js                 插件入口：Config、apply、工具注册（ssh_workbench_target + 按宿主/方言出现的 remote_*）
+├── index.js                 插件入口：Config、apply、工具注册（remote_exec + remote_bash + remote_pwsh）
 ├── routes.js                UI 数据面：资源管理 / 连接测试 / SFTP 文件面板 / 侧边栏偏好
 ├── client.js                Client 半片：左侧导航远程工作台、设置页、@ 引用 chip、右侧栏文件面板
 └── core/
-    ├── targets.js           每会话目标绑定：@ 解析、切换、历史回放
-    ├── server-reference.js  agent/pre-step：绑定 + 注入目标上下文
-    ├── remote-bash.js       tools/execute：把原生 bash 路由到 SSH，映射原生输出值
-    ├── remote-bash-tool.js  插件自有 remote_bash / remote_pwsh 工具（Windows 宿主与 Windows 目标）
+    ├── targets.js           每会话 @ 提示：mention 解析、去重、历史恢复（不绑定执行目标）
+    ├── server-reference.js  agent/pre-step：每轮注入资源清单与 @ 提示上下文
+    ├── remote-bash.js       POSIX 远程 shell 辅助函数：workdir、超时包装、原生值映射
+    ├── remote-bash-tool.js  显式 server 的 remote_bash / remote_pwsh 工具
     ├── remote-exec-tool.js  插件自有 remote_exec：显式目标、一轮 fan-out、并发池、逐任务 guard/超时/输出
     ├── target-stats.js      按 Session 聚合 activity 中的远程执行次数（composer dock）
+    ├── server-ref.js        资源名/ID 解析与 requireServerRef 错误
     ├── shell-adapters.js    方言适配器入口：POSIX 适配器、按方言选择、宿主平台判断
     ├── win32-adapter.js     Windows 适配器：PowerShell -EncodedCommand、UTF-8、退出码、workdir
     ├── dialect.js           目标方言：facts.dialect 优先、platform 仅作提示
@@ -45,36 +46,35 @@ vendor/
 
 `ssh2` 不通过 `dependencies` 安装，而是以纯 JS 形式 vendor 进发布包（`vendor/ssh2` + `vendor/node_modules/`）；broker 用相对路径动态 import。这样插件安装不触发 `node-gyp`、不需要本机编译工具链、也不依赖 npm 网络，代价是包体积略大。ssh2 的可选原生模块（`cpu-features`、`nan`、`sshcrypto.node`）全部未携带，ssh2 会回退到纯 JS 实现。
 
-## 一次远程 bash 的完整路径
+## 一次远程工具执行的完整路径
 
 1. 用户消息进入 `agent/pre-step`。
 2. `server-reference.js`：
    - 从宿主消息里提取 `@名字`，匹配服务器清单；
-   - 1 个 → 绑定为 active target；多个 → 记住候选，并在上下文里优先引导 `remote_exec`（显式目标、可并行）；模型若仍直接调用 shell 工具，需先用 `ssh_workbench_target` 选择；
-   - 需要时注入一条 user-role 目标上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
-3. 模型调用原生 `bash`。
+   - 仅记录为 @ 提示（candidates），不产生 active target；每轮注入资源清单与显式 server 工具规则，模型自行选择目标；
+   - 注入一条 user-role 资源上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
+3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
 4. DSH 审批（本插件不参与）。
-5. `ctx.tools.guard()`（`guard.js`）：若本会话有 active target 且命令命中黑名单 → 直接拒绝。`gate.js` 先把每段还原成 argv words（去引号/转义、剥 `sudo`/`timeout` 等包装、路径规范化、重定向按 token、`$()`/`eval` 递归）再匹配。
-6. `tools/execute` waterfall（`remote-bash.js`；仅 POSIX 宿主、仅 POSIX 目标）：
-   - 非 `bash` / 无目标 → `next()`（本地行为不变）；`@a @b` 后未选目标 → `TARGET_NOT_SELECTED` 错误，不静默跑本地；
-   - `run_in_background` → 结构化错误（远程不支持）；
-   - 处理 `workdir`（绝对路径 / `~` / 相对路径 → `$HOME` 前缀）；
-   - 探测远端 `timeout` 能力（`kill`/`basic`/`none` + 登录 shell 路径，按服务器缓存），可用时把命令包成 `timeout [-k N] <秒> '<shell>' -c '<命令>'`，让客户端超时同时终止远端进程组；
-   - `runtime.exec(server, command, { timeoutMs, signal, cap, stderrCap })`；broker 建通道后立即关闭 stdin（等价 `</dev/null`），把远端 `timeout` 的 exit 124 映射回 timeout 结果，并对 stdout/stderr 分别限长；
-   - 映射成原生 bash foreground value，或结构化错误结果；value 的 cwd 带目标前缀（`web-1:/var/log`）；超时/取消结果在 stderr 说明远端是否已终止；目标切换后的首条命令追加 `[remote] target` 行。
-7. DSH 管道用原生 bash 的输出 schema 校验、原生 renderer 渲染终端卡片。
+5. `ctx.tools.guard()`（`guard.js`）：从 `arguments.server`（或 `remote_exec.tasks[]` 的每个 server）解析目标，按对应方言检查黑名单 → 命中直接拒绝。`gate.js` 先把每段还原成 argv words（去引号/转义、剥 `sudo`/`timeout` 等包装、路径规范化、重定向按 token、`$()`/`eval` 递归）再匹配。
+6. 工具实现（`remote-bash-tool.js` / `remote-exec-tool.js`）：
+   - `remote_bash` / `remote_pwsh` 处理 `workdir`（绝对路径 / `~` / 相对路径 → `$HOME` 前缀）；
+   - 逐 server 解析方言与 `timeout` 能力（`kill`/`basic`/`none` + 登录 shell 路径；`remote_exec` 的 `probe:false` 跳过探测）；
+   - 可用时把命令包成 `timeout [-k N] <秒> '<shell>' -c '<命令>'`，让客户端超时同时终止远端进程组；
+   - `runtime.exec(server, command, { timeoutMs, signal, cap, stderrCap, connectTimeoutMs })`；broker 建通道后立即关闭 stdin（等价 `</dev/null`），把远端 `timeout` 的 exit 124 映射回 timeout 结果，并对 stdout/stderr 分别限长；
+   - 返回带 server / dialect / cwd / 退出码 / stdout / stderr 的文本结果；超时/取消说明远端是否已终止。
+7. `remote_exec` 的多个 task 在同一个 assistant step 内并发执行（最多 `batchConcurrency`），结果按输入顺序渲染；`isConcurrencySafe` 让 DSH 的并行调度器可以真正重叠调用。
 
-## 多资源并行（v1.7）
+## 多资源并行（v2.0）
 
 `remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })` 是插件自有的 `defineTool`，不走 `tools/execute`：
 
-- **显式目标**：每个 task 自己带 `server`，不读取也不修改会话的 active target；`server: "local"` 被拒绝，任务只能落在纳管资源上。
+- **显式目标**：每个 task 自己带 `server`，不依赖也不修改任何会话目标状态；`server: "local"` 被拒绝，任务只能落在纳管资源上。
 - **全量预检**：先解析全部 server、方言、workdir、timeout；任一 task 非法则整批拒绝，不会执行一半。
 - **真正并发**：工具声明 `isConcurrencySafe: () => true`，DSH 的 batch 调度会把它和其他 parallel-safe 调用一起放进有界并发池；工具内部再按 `batchConcurrency`（默认 4，最大 8）跨服务器并发。单台服务器仍受 `maxChannelsPerServer` 约束。
 - **逐任务隔离**：每个 task 按自己的 `facts.dialect` 选择 POSIX/Windows 适配器与 guard 规则；超时、传输失败、非零退出码只影响该任务，结果按输入顺序渲染。
 - **输出预算**：一次 batch 共享 `maxBatchOutputBytes`（默认 256 KiB），每个 task 先取 `maxOutputBytes` 与均分预算的较小值，避免一次 fan-out 撑爆上下文。
 - **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
-- **UI**：composer 下方目标 pill 单/多目标都打开同一张只读卡，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；active 仍由 `ssh_workbench_target` / `@` 决定，终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。可见性只由本会话当前 active target 和 @ 候选决定：切回 `local` 后候选清空，dock 随之隐藏；历史执行统计不会让它常驻。pill 文案优先显示 active target；只有在多个候选且尚未选定 shell 目标时才显示「N 个目标」；卡片仍列出当前候选与 active 的执行次数。
+- **UI**：composer 下方 pill 是执行账本的只读投影，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。没有执行记录时不显示，因此不存在“切本地后残留”。
 
 ## 多宿主与多方言（v1.5）
 
@@ -87,7 +87,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 
 - 目标方言由连接后的探测决定（`uname -s` 成功 → posix；否则 `cmd /c ver` 成功 → windows），写入 `facts.dialect`；`platform` 字段只作探测前提示。`effectiveDialect()` 是唯一读取入口。
 - 方言决定命令构造：POSIX 用 `cd -- ... && ...` + 可选 `timeout` 包装；Windows 用 UTF-16LE base64 的 `powershell -EncodedCommand` 脚本（内含 UTF-8 输出、`Set-Location`、显式退出码），没有远端 `timeout`。
-- 目标上下文与 `ssh_workbench_target` 文案按方言/宿主生成正确的工具名；`remote_bash` 与 `remote_pwsh` 互相拒绝错误方言并给出改用建议。
+- 目标上下文按方言/宿主生成正确的远程工具名；`remote_bash` 与 `remote_pwsh` 互相拒绝错误方言并给出改用建议。
 - `ctx.tools.guard()` 按工具名选择 POSIX 或 PowerShell 规则集。
 
 ## 后台任务（v1.6）
@@ -105,12 +105,12 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 - `agent/pre-step`：返回 `{ kind: 'enter', messages }`，改写必须 spread。
 - `ctx.tools.guard()`：同步、单调的拒绝；在审批之后执行。
 - 原生 `bash` 输出值：`{ kind:'foreground', cwd, exitCode, signal, timedOut, aborted, timeoutMs, stdout, stderr }`。
-- 模型可见工具：`ssh_workbench_target` 与 `remote_exec` 恒在；POSIX 宿主上另有 `remote_pwsh`，Windows 宿主上另有 `remote_bash` + `remote_pwsh`。`remote_exec` 声明 `isConcurrencySafe:true`，shell 工具保持 exclusive。
+- 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh` 在两种宿主上都注册；原生 `bash` / `pwsh` 保持本地语义。`remote_exec` 声明 `isConcurrencySafe:true`，shell 工具保持 exclusive。
 
 ## 目标状态生命周期
 
 - 存储：进程内 `Map<sessionId, {candidates, active, version, injectedVersion, notifiedVersion, seeded}>`。
-- 来源：人类消息里的 `@`（权威、可回放）+ `ssh_workbench_target` 工具。目标 Dock 是只读执行次数视图，不再提供切换入口。
+- 来源：每次工具调用的显式 `server`；人类消息里的 `@` 仅作为本轮提示。目标 Dock 是只读执行次数视图，不提供切换入口。
 - 恢复：会话恢复后首次 `agent/pre-step` 用 `session.deriveMessages()` 回放历史人类消息。
 - 清理：`agent/disposed` 或插件卸载。
 
@@ -119,7 +119,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 | 情况 | 行为 |
 |---|---|
 | 没有目标 | 原生工具完全本地，零开销 |
-| `targetContext:false` | 不绑定、不注入；`ssh_workbench_target` 仍可手动使用 |
+| `targetContext:false` | 不注入资源清单/`@` 提示；显式 server 工具仍可用 |
 | `ctx.tools.guard` 不可用（旧 DSH） | 记录 warning，黑名单关闭，其余功能不变 |
 | 目标被删除/禁用/方言不匹配 | 返回结构化错误，提示重新选择目标或改用另一种 remote 工具 |
 | 远端没有 `timeout` 工具 | 命令不加包装；超时只停止等待，stderr 提示远端可能仍在运行 |
@@ -127,7 +127,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 | host facts 采集失败 | 只影响 UI/上下文摘要，不影响执行；下次测试/选中目标时重试 |
 | SFTP 分块卡死 | `transferChunkTimeoutMs` 到点关闭会话并报 `SFTP_TIMEOUT`，UI 可从 offset 续传 |
 | 远程 home 解析失败 | `/sftp/home` 返回可读错误，工作台文件面板回退到 `/` |
-| 多个 `@` 未选择目标 | 直接调用 shell 工具时 router 返回 `TARGET_NOT_SELECTED`；模型应改用 `remote_exec` 显式指定 server |
+| 多个 `@` 未指定目标 | 模型按资源清单选择，或直接发 `remote_exec` 并行；没有 active target 可切换，不会静默跑本地 |
 | 服务器清单损坏 | 路由返回错误结果，不影响本地工具 |
 
 ## 安全边界
