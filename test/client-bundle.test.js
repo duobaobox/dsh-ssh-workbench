@@ -406,6 +406,9 @@ test('the composer target dock mirrors the usage card', () => {
   assert.match(bundleSource, /const multi = names\.length > 1/)
   assert.match(bundleSource, /'aria-haspopup': 'dialog'/)
   assert.match(bundleSource, /data-sdh-target-dock/)
+  // The panel is portaled to body so a composer stacking context cannot hide it.
+  assert.match(bundleSource, /ReactDOM\.createPortal\(panel, document\.body\)/)
+  assert.match(bundleSource, /panelRef\.current\.contains/)
   // Same anatomy as the shipped token-usage card: title + total, hairline, label/value grid.
   assert.match(bundleSource, /dsh-ssh-workbench-target-title\{display:flex;justify-content:space-between;gap:16px;margin-bottom:8px/)
   assert.match(bundleSource, /dsh-ssh-workbench-target-rule\{border-top:\.5px solid var\(--dsw-alias-border-l2\);margin-bottom:10px\}/)

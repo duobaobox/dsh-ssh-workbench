@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.3）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.4）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -74,7 +74,7 @@ vendor/
 - **逐任务隔离**：每个 task 按自己的 `facts.dialect` 选择 POSIX/Windows 适配器与 guard 规则；超时、传输失败、非零退出码只影响该任务，结果按输入顺序渲染。
 - **输出预算**：一次 batch 共享 `maxBatchOutputBytes`（默认 256 KiB），每个 task 先取 `maxOutputBytes` 与均分预算的较小值，避免一次 fan-out 撑爆上下文。
 - **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
-- **UI**：composer 下方目标 pill 单/多目标都打开同一张只读卡，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；active 仍由 `ssh_workbench_target` / `@` 决定，终端/文件从左侧工作台进入。
+- **UI**：composer 下方目标 pill 单/多目标都打开同一张只读卡，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；active 仍由 `ssh_workbench_target` / `@` 决定，终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。
 
 ## 多宿主与多方言（v1.5）
 

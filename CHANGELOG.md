@@ -4,6 +4,14 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.4] - 2026-11-10
+
+### 目标 Dock 弹层改用 body portal
+
+- 修复部分窗口里点击目标 pill 看起来无反应：弹层改为 `react-dom.createPortal` 挂到 `document.body`，避开 composer 的 stacking context 与 overflow 裁剪；外部点击判断同时检查 `rootRef` 和 `panelRef`。
+- 位置仍按 pill 的 rect 计算并固定在视口右下锚点；点击外部、Escape 或再次点击 pill 都会关闭。
+- 测试：236/236 通过（新增 portal 与 panelRef 结构断言）。
+
 ## [1.7.3] - 2026-11-10
 
 ### 目标 Dock：对齐 Token 用量弹窗的只读精简卡
