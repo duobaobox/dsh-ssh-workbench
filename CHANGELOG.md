@@ -4,6 +4,20 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.0] - 2026-11-10
+
+### 多资源并行执行与目标 Dock
+
+- 新增模型工具 `remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })`：每个 task 显式指定目标，一次调用可跨多台服务器并行采集；不读取也不改变会话的 active target。
+- 全量预检后再执行：任一 task 的目标/命令/目录/超时非法时整批拒绝，不会执行一半；单任务失败、传输错误或超时只影响该任务，结果按输入顺序返回。
+- `remote_exec` 声明 `isConcurrencySafe: true`，由 DSH 工具批处理调度并行；工具内部再按 `batchConcurrency`（默认 4，上限 8）跨服务器并发，并受单连接 `maxChannelsPerServer` 约束。
+- 安全：guard 对 `remote_exec.tasks[]` 逐条按目标方言检查；目标 `facts.dialect` 缺失时同时跑 POSIX 与 PowerShell 两套规则，避免记录 platform 过期导致绕过。批量仅前台，禁止 `server: "local"`。
+- 配置新增 `maxBatchTasks`、`batchConcurrency`、`maxBatchOutputBytes`；输出预算按任务均分，避免一次 fan-out 撑爆上下文。
+- `POST /target` 允许 UI 切换 active target（只影响 UI/上下文，不碰执行通道）。
+- composer 目标 Dock：单目标显示资源名并可点击打开工作台；多候选显示「N 个目标」聚合 pill，点开菜单查看目标/平台并切换，active 只在菜单行高亮，避免 target 切换时文字跳动。
+- 目标上下文与快速上手改为优先引导 `remote_exec`；直接调用 shell 工具且多 @ 未选目标时仍返回 `TARGET_NOT_SELECTED`。
+- 测试：232/232 通过（新增 remote_exec、guard batch、POST /target、TargetDock 结构断言）。
+
 ## [1.6.4] - 2026-11-09
 
 ### 品牌统一：SSH Workbench / 远程工作台

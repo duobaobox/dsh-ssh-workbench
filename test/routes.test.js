@@ -123,6 +123,16 @@ function makeDeps() {
     },
     targets: {
       get: () => state.targetState,
+      setActive: (session, ref) => {
+        const server = state.servers.find((entry) => entry.name === ref || entry.id === ref)
+        if (!server && ref !== 'local') return { ok: false, error: `unknown resource "${ref}"` }
+        state.targetState = {
+          active: ref === 'local' ? null : server.name,
+          candidates: ref === 'local' ? [] : [server.name],
+          version: (state.targetState.version ?? 0) + 1,
+        }
+        return { ok: true, state: state.targetState }
+      },
     },
     refreshFacts: async () => ({
       hostname: 'web-1',
@@ -354,6 +364,25 @@ test('the target route exposes live session data', async () => {
   assert.equal(target.json.target, 'web-1')
   assert.equal(target.json.version, 4)
 
+})
+
+test('POST target switches the active target for the dock', async () => {
+  const { deps, state } = makeDeps()
+  state.targetState = { active: null, candidates: ['web-1', 'db-1'], version: 2 }
+  const handler = createRoutes(deps)
+
+  const response = await call(handler, 'POST', '/dsh-ssh-workbench/target', { session: 's1', server: 'web-1' })
+  assert.equal(response.status, 200)
+  assert.equal(response.json.target, 'web-1')
+  assert.deepEqual(response.json.candidates, ['web-1'])
+  assert.equal(response.json.version, 3)
+
+  const missing = await call(handler, 'POST', '/dsh-ssh-workbench/target', { session: 's1', server: 'nope' })
+  assert.equal(missing.status, 400)
+  assert.match(missing.json.error, /unknown resource/)
+  const noSession = await call(handler, 'POST', '/dsh-ssh-workbench/target', { server: 'web-1' })
+  assert.equal(noSession.status, 400)
+  assert.match(noSession.json.error, /session is required/)
 })
 
 test('server update closes the target transfer sessions', async () => {

@@ -398,3 +398,12 @@ test('Windows local paths keep their separator in breadcrumbs and preview names'
   assert.match(bundleSource, /settings\.platformWindows/)
   assert.match(bundleSource, /platformText\(server\.dialect \?\? server\.platform\)/)
 })
+
+test('the composer target dock distinguishes one target from several', () => {
+  assert.match(bundleSource, /'target\.multiChip'/)
+  assert.match(bundleSource, /'target\.multiTitle'/)
+  assert.match(bundleSource, /const multi = candidates\.length > 1/)
+  assert.match(bundleSource, /post\('\/target', \{ session: sessionId, server: name \}\)/)
+  assert.match(bundleSource, /primitives\.Menu/)
+  assert.match(bundleSource, /'aria-haspopup': multi \? 'menu' : undefined/)
+})

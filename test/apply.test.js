@@ -121,9 +121,12 @@ test('plugin exports the cordis contract', () => {
 
 test('apply registers the target selector plus the Windows-target shell on a POSIX Host', () => {
   const h = makeHarness()
-  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_pwsh', 'ssh_workbench_target'])
+  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_exec', 'remote_pwsh', 'ssh_workbench_target'])
   const targetTool = h.tools.find((tool) => tool.name === 'ssh_workbench_target')
   assert.deepEqual(Object.keys(targetTool.parameters), ['server'])
+  const remoteExec = h.tools.find((tool) => tool.name === 'remote_exec')
+  assert.deepEqual(Object.keys(remoteExec.parameters), ['tasks', 'concurrency'])
+  assert.equal(remoteExec.isConcurrencySafe({}), true)
   assert.equal(h.guards.length, 1)
   assert.equal(listen(h, 'tools/execute').length, 1)
   assert.equal(listen(h, 'agent/pre-step').length, 1)
@@ -137,6 +140,9 @@ test('publicConfig exposes only live settings', () => {
   assert.equal(config.commandTimeoutMs, 120000)
   assert.equal(config.targetContext, true)
   assert.equal(config.prewarm, true)
+  assert.equal(config.maxBatchTasks, 8)
+  assert.equal(config.batchConcurrency, 4)
+  assert.equal(config.maxBatchOutputBytes, 262144)
   assert.equal('factsTtlMs' in config, false)
   assert.equal('httpProbeAllowedHosts' in config, false)
 })
@@ -239,7 +245,7 @@ test('Windows Hosts register remote_bash instead of a native-bash router', async
   const h = makeHarness({ hostPlatform: 'win32' })
   assert.deepEqual(
     h.tools.map((tool) => tool.name).sort(),
-    ['remote_bash', 'remote_pwsh', 'ssh_workbench_target'],
+    ['remote_bash', 'remote_exec', 'remote_pwsh', 'ssh_workbench_target'],
     'win32 has no native bash tool to intercept',
   )
   assert.equal(listen(h, 'tools/execute').length, 0)

@@ -70,6 +70,8 @@ test('renderTargetContext names the target and the local/remote split', () => {
   assert.match(text, /never use write\/edit for remote files/)
   assert.match(text, /ssh_workbench_target/)
   assert.match(text, /"local"/)
+  assert.match(text, /remote_exec\(\{ tasks:/)
+  assert.match(text, /does not change the active target/)
 })
 
 test('renderTargetContext includes fresh facts and operational discipline', () => {
@@ -97,6 +99,8 @@ test('renderTargetContext asks for a choice when several servers are mentioned',
   assert.match(text, /- db-1 —/)
   assert.match(text, /still runs on the local DSH host/)
   assert.match(text, /ssh_workbench_target/)
+  assert.match(text, /remote_exec\(\{ tasks:/)
+  assert.match(text, /runs those tasks concurrently/)
 })
 
 test('buildTargetContextMessage uses the host factory and a reserved source kind', () => {

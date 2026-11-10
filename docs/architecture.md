@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.6.4）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.0）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -14,6 +14,7 @@ lib/
     ├── server-reference.js  agent/pre-step：绑定 + 注入目标上下文
     ├── remote-bash.js       tools/execute：把原生 bash 路由到 SSH，映射原生输出值
     ├── remote-bash-tool.js  插件自有 remote_bash / remote_pwsh 工具（Windows 宿主与 Windows 目标）
+    ├── remote-exec-tool.js  插件自有 remote_exec：显式目标、一轮 fan-out、并发池、逐任务 guard/超时/输出
     ├── shell-adapters.js    方言适配器入口：POSIX 适配器、按方言选择、宿主平台判断
     ├── win32-adapter.js     Windows 适配器：PowerShell -EncodedCommand、UTF-8、退出码、workdir
     ├── dialect.js           目标方言：facts.dialect 优先、platform 仅作提示
@@ -48,7 +49,7 @@ vendor/
 1. 用户消息进入 `agent/pre-step`。
 2. `server-reference.js`：
    - 从宿主消息里提取 `@名字`，匹配服务器清单；
-   - 1 个 → 绑定为 active target；多个 → 记住候选并要求模型用 `ssh_workbench_target` 选择；
+   - 1 个 → 绑定为 active target；多个 → 记住候选，并在上下文里优先引导 `remote_exec`（显式目标、可并行）；模型若仍直接调用 shell 工具，需先用 `ssh_workbench_target` 选择；
    - 需要时注入一条 user-role 目标上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
 3. 模型调用原生 `bash`。
 4. DSH 审批（本插件不参与）。
@@ -61,6 +62,18 @@ vendor/
    - `runtime.exec(server, command, { timeoutMs, signal, cap, stderrCap })`；broker 建通道后立即关闭 stdin（等价 `</dev/null`），把远端 `timeout` 的 exit 124 映射回 timeout 结果，并对 stdout/stderr 分别限长；
    - 映射成原生 bash foreground value，或结构化错误结果；value 的 cwd 带目标前缀（`web-1:/var/log`）；超时/取消结果在 stderr 说明远端是否已终止；目标切换后的首条命令追加 `[remote] target` 行。
 7. DSH 管道用原生 bash 的输出 schema 校验、原生 renderer 渲染终端卡片。
+
+## 多资源并行（v1.7）
+
+`remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })` 是插件自有的 `defineTool`，不走 `tools/execute`：
+
+- **显式目标**：每个 task 自己带 `server`，不读取也不修改会话的 active target；`server: "local"` 被拒绝，任务只能落在纳管资源上。
+- **全量预检**：先解析全部 server、方言、workdir、timeout；任一 task 非法则整批拒绝，不会执行一半。
+- **真正并发**：工具声明 `isConcurrencySafe: () => true`，DSH 的 batch 调度会把它和其他 parallel-safe 调用一起放进有界并发池；工具内部再按 `batchConcurrency`（默认 4，最大 8）跨服务器并发。单台服务器仍受 `maxChannelsPerServer` 约束。
+- **逐任务隔离**：每个 task 按自己的 `facts.dialect` 选择 POSIX/Windows 适配器与 guard 规则；超时、传输失败、非零退出码只影响该任务，结果按输入顺序渲染。
+- **输出预算**：一次 batch 共享 `maxBatchOutputBytes`（默认 256 KiB），每个 task 先取 `maxOutputBytes` 与均分预算的较小值，避免一次 fan-out 撑爆上下文。
+- **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
+- **UI**：composer 下方目标 pill 在单目标时显示名字、点击打开工作台；多候选时显示「N 个目标」，点开菜单列出目标与平台，选中后 `POST /target` 只更新 UI/active 目标，不触碰任何执行通道。
 
 ## 多宿主与多方言（v1.5）
 
@@ -91,12 +104,12 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 - `agent/pre-step`：返回 `{ kind: 'enter', messages }`，改写必须 spread。
 - `ctx.tools.guard()`：同步、单调的拒绝；在审批之后执行。
 - 原生 `bash` 输出值：`{ kind:'foreground', cwd, exitCode, signal, timedOut, aborted, timeoutMs, stdout, stderr }`。
-- 模型可见工具：`ssh_workbench_target` 恒在；POSIX 宿主上另有 `remote_pwsh`，Windows 宿主上另有 `remote_bash` + `remote_pwsh`。
+- 模型可见工具：`ssh_workbench_target` 与 `remote_exec` 恒在；POSIX 宿主上另有 `remote_pwsh`，Windows 宿主上另有 `remote_bash` + `remote_pwsh`。`remote_exec` 声明 `isConcurrencySafe:true`，shell 工具保持 exclusive。
 
 ## 目标状态生命周期
 
-- 存储：进程内 `Map<sessionId, {candidates, active, version, injectedVersion, seeded}>`。
-- 来源：人类消息里的 `@`（权威、可回放）+ `ssh_workbench_target` 工具。
+- 存储：进程内 `Map<sessionId, {candidates, active, version, injectedVersion, notifiedVersion, seeded}>`。
+- 来源：人类消息里的 `@`（权威、可回放）+ `ssh_workbench_target` 工具 + UI 的 `POST /target`（仅切换 active）。
 - 恢复：会话恢复后首次 `agent/pre-step` 用 `session.deriveMessages()` 回放历史人类消息。
 - 清理：`agent/disposed` 或插件卸载。
 
@@ -113,12 +126,12 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 | host facts 采集失败 | 只影响 UI/上下文摘要，不影响执行；下次测试/选中目标时重试 |
 | SFTP 分块卡死 | `transferChunkTimeoutMs` 到点关闭会话并报 `SFTP_TIMEOUT`，UI 可从 offset 续传 |
 | 远程 home 解析失败 | `/sftp/home` 返回可读错误，工作台文件面板回退到 `/` |
-| 多个 `@` 未选择目标 | router 返回 `TARGET_NOT_SELECTED`，避免静默在本地执行 |
+| 多个 `@` 未选择目标 | 直接调用 shell 工具时 router 返回 `TARGET_NOT_SELECTED`；模型应改用 `remote_exec` 显式指定 server |
 | 服务器清单损坏 | 路由返回错误结果，不影响本地工具 |
 
 ## 安全边界
 
-- 黑名单只拦机器毁灭类命令，不是权限边界。
+- 黑名单只拦机器毁灭类命令，不是权限边界。`remote_exec` 的每个 task 都会按目标方言过 guard，但批量并发不改变权限边界。
 - 远程命令不受 DSH 本地沙箱约束；是否审批由 DSH 会话预设决定。
 - 凭据与主机身份：见 `secrets.js` / `known-hosts.js`；未知指纹不会被静默信任。
 - 插件不写 Session 事件、不做审计日志；`activity.json` 只是 UI 概览。

@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.6.4.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-1.7.0.tgz`。安装后重启/重载插件。
 
 发布包自带纯 JS 的 SSH 依赖，安装过程不需要编译（不需要 Xcode Command Line Tools）、也不额外下载 npm 包，离线机器同样可以安装。
 
@@ -40,9 +40,18 @@ npm run pack
 @web-1 @db-1 各自看下磁盘
 ```
 
-模型会先调用 `ssh_workbench_target({ server: "web-1" })` 再执行，然后切换到 `db-1`。可以随时用 `ssh_workbench_target({ server: "local" })` 回到本机。
+模型会优先用 `remote_exec` 一次并行执行：
 
-注意：一次提到多个资源后，当前目标会先被清空；在模型调用 `ssh_workbench_target` 选择之前，直接调用远程 shell 工具（POSIX 宿主上的原生 `bash` 或 `remote_bash`）会返回 `TARGET_NOT_SELECTED` 错误（不会静默在本机执行）。资源名支持中文/非 ASCII（如 `@测试机`）。
+```
+remote_exec({ tasks: [
+  { server: "web-1", command: "df -h" },
+  { server: "db-1", command: "df -h" }
+] })
+```
+
+每个 task 自己指定目标，命令在各自服务器上并发执行，结果按任务顺序返回；这不会改变当前 active target。如果模型仍直接调用 `bash`，一次提到多个资源后当前目标会先被清空，在调用 `ssh_workbench_target` 选择之前会返回 `TARGET_NOT_SELECTED` 错误（不会静默在本机执行）。资源名支持中文/非 ASCII（如 `@测试机`）。
+
+多目标会话里 composer 下方的目标 pill 显示「N 个目标」，点开可以查看每个目标的平台并切换 active target；单目标时仍显示资源名，点击直接打开工作台。
 
 ## 5. 远程工作台
 
@@ -68,6 +77,9 @@ npm run pack
 
 **怎么确认命令跑在哪台机器？**
 目标切换后的第一条远程命令会带有目标提示（原生 bash 卡片显示 stderr 行与 cwd 前缀，如 `[remote] target: web-1 (...)`、`web-1:/var/log`；远程 shell 工具在结果文本里带 target/cwd）；composer 下方参数行常驻显示当前目标。也可以点 `ssh_workbench_target` 选 `local` 回到本机。
+
+**能不能一次让多个资源并行执行？**
+可以，让模型调用 `remote_exec`：每个 task 显式带 `server`，默认并发 4、最多 8，单次最多 8 个 task；每个任务独立超时、独立输出、互不污染，结果按输入顺序返回。它只支持前台命令，长任务仍走后台工具。直接调用 `bash` / `remote_bash` / `remote_pwsh` 时仍受单 active target 限制，需要先切换目标。
 
 **怎么跑长时间任务 / 后台服务？**
 让模型带 `run_in_background: true` 调用远程 shell 工具（`remote_bash` / `remote_pwsh`，POSIX 宿主上的原生 `bash` 路由同样支持）。工具会立刻返回远端 pid 和日志路径：

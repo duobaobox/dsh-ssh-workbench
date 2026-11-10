@@ -4,7 +4,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 
 不是又一个 SSH 客户端：它把远程执行接进 DSH 的对话与审批，把终端、SFTP 文件管理和本地文件放在同一个工作台里；安装包自包含、开箱即用。
 
-插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。对话里 `@资源名` 之后，命令在目标上执行：POSIX 宿主复用原生 `bash`（结果仍是原生终端卡片）；Windows 宿主没有内置 `bash`，改用插件自有的 `remote_bash`。Windows 目标（PowerShell）在两种宿主上都经 `remote_pwsh` 执行。原生 `bash` / `pwsh` 始终只在本机生效。没有 `@` 时一切行为不变。模型侧新增的工具是 `ssh_workbench_target`（切换目标）和按需出现的 `remote_bash` / `remote_pwsh`。另外保留一道**危险命令黑名单**作为兜底。
+插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。对话里 `@资源名` 之后，命令在目标上执行：POSIX 宿主复用原生 `bash`（结果仍是原生终端卡片）；Windows 宿主没有内置 `bash`，改用插件自有的 `remote_bash`。Windows 目标（PowerShell）在两种宿主上都经 `remote_pwsh` 执行。原生 `bash` / `pwsh` 始终只在本机生效。没有 `@` 时一切行为不变。模型侧新增的工具是 `ssh_workbench_target`（切换目标）、`remote_exec`（显式目标、一轮并行采集多个资源）和按需出现的 `remote_bash` / `remote_pwsh`。另外保留一道**危险命令黑名单**作为兜底。
 
 - 适用：DSH 0.2.1-rc.1 ～ 0.2.x（`engines.dsh: >=0.2.1-rc.1 <0.3.0`）
 - 平台：macOS / Linux / Windows 上的 DSH；远程目标支持 POSIX 与 Windows（PowerShell）
@@ -18,10 +18,11 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | 能力 | 说明 |
 |---|---|
 | 远程资源纳管 | 右侧栏/设置页：增删改查、连接测试、host key 指纹确认、密码/私钥凭据（0600 存储）；连接测试/选中目标后会采集 hostname 等信息（hostname 仅用于目标上下文；内核/磁盘只存储，不在列表展示） |
-| `@资源` 绑定 | 消息里 `@web-1` 后，命令在 web-1 上执行（资源名支持中文/非 ASCII）；`@` 多个资源时需用 `ssh_workbench_target` 选择，未选择前远程工作台会报 `TARGET_NOT_SELECTED` 而不是静默走本地 |
+| `@资源` 绑定 | 消息里 `@web-1` 后，命令在 web-1 上执行（资源名支持中文/非 ASCII）；`@` 多个资源时可以让模型用 `remote_exec` 一次并行执行，不必逐个切换。直接调用 shell 工具时仍需先用 `ssh_workbench_target` 选择，未选择会报 `TARGET_NOT_SELECTED` 而不是静默走本地 |
 | Windows 宿主 | Windows 上的 DSH 没有原生 `bash`（DSH 按平台禁用）：插件注册 `remote_bash` 用于 POSIX 目标，参数与行为对齐原生 bash 路由；原生 `pwsh` 仍只作用于本机 |
 | Windows 目标 | Windows 目标经插件自有的 `remote_pwsh` 执行：命令包成 UTF-16LE 的 `-EncodedCommand` 脚本（避免引号转义），强制 UTF-8 输出并回传真实退出码；PowerShell 危险命令另有黑名单 |
 | 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
+| `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不读取也不改变会话的 active target。仅前台执行，长任务仍用后台工具 |
 | `remote_bash` / `remote_pwsh` | `command`、`workdir`（绝对路径 / `~/x` / 相对路径）、`timeoutMs`、取消沿用同一套语义；POSIX 目标超时后远端命令组会被终止（远端有 `timeout` 时含 `-k` 补 KILL），Windows 目标只能客户端停止等待 |
 | 结果输出 | POSIX 宿主上的 POSIX 目标仍是 DSH 原生 bash 终端卡片；`remote_bash` / `remote_pwsh` 返回带 target / cwd / 退出码 / stdout / stderr 的文本结果 |
 | 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `/tmp` 日志，Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
@@ -31,7 +32,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | 侧边栏开关 | 插件管理 → 远程工作台 → 页面里的「在侧边栏显示远程工作台」可关闭左侧导航入口；关闭后 `@资源名` 远程执行、设置页与模型工具不受影响 |
 | 危险命令黑名单 | `rm -rf /`、`mkfs`、`dd of=/dev/*`、`fdisk/parted/wipefs`、改根目录权限、fork bomb 等同步拦截；多行脚本、`&`、引号/转义、路径变体、`$()`/`eval` 都会先还原再判断；其他命令交给 DSH 审批 |
 
-**不做**：诊断包、HTTP 探测、批量执行、远程 `read/write/edit/glob/grep`（这些工具始终只作用于 DSH 主机；远程文件操作用对应的远程 shell 工具，如 `cat`、`tee`、`sed`、`Get-Content`）。也**不做**命令分级（allow/guarded）、AI 风险解释和审计。
+**不做**：诊断包、HTTP 探测、跨主机文件分发、远程 `read/write/edit/glob/grep`（这些工具始终只作用于 DSH 主机；远程文件操作用对应的远程 shell 工具，如 `cat`、`tee`、`sed`、`Get-Content`）。也**不做**命令分级（allow/guarded）、AI 风险解释和审计。
 
 ## 安装
 
@@ -46,7 +47,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.6.4.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.0.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 0.5 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
@@ -71,13 +72,17 @@ npm run pack
 @web-1 把 /etc/nginx/nginx.conf 里 worker_connections 改成 2048，改完 nginx -t
 ```
 
-2. 同时提到多个资源时，模型需要先选择目标：
+2. 同时提到多个资源时，让模型用 `remote_exec` 一次并行执行，不必逐个切换：
 
 ```
 @web-1 @db-1 各自看下磁盘
-→ 模型调用 ssh_workbench_target({ server: "web-1" }) → bash df -h
-→ 模型调用 ssh_workbench_target({ server: "db-1" }) → bash df -h
+→ 模型调用 remote_exec({ tasks: [
+    { server: "web-1", command: "df -h" },
+    { server: "db-1", command: "df -h" }
+  ] })
 ```
+
+每个 task 自带目标，命令在各自服务器上并发执行，结果按任务顺序返回到同一条工具卡片；不会改变当前 active target。如果模型仍直接调用 `bash`，多资源且未选目标时仍会得到 `TARGET_NOT_SELECTED`，不会静默跑在本地。composer 下方的目标 pill 在多资源会话里显示「N 个目标」，点开可切换或查看每个目标的终端/文件入口。
 
 3. 切回本机：
 
@@ -98,18 +103,19 @@ ssh_workbench_target({ server: "local" })
 
 - **stdout/stderr 顺序**：两者是独立管道，收集后分开返回（与原生 bash 的值契约一致），交错顺序会丢失；看 `make`/`pip install` 这类日志时需要留意。
 - **Windows 本地路径**：工作台本地文件面板已按 Windows 分隔符处理面包屑与文件名；极少数外部工具生成的混合分隔符路径仍可能显示成一段，可在路径编辑框直接输入绝对路径。
+- **`remote_exec` 仅前台**：不支持 `run_in_background`；一次最多 8 个 task、默认并发 4，所有结果共享 `maxBatchOutputBytes` 预算，超出会按任务截断。长时间任务仍应分别用后台工具或终端。
 - **后台任务**：`run_in_background` 返回的是远端 pid + 日志，不是 DSH 本地 job id；`timeoutMs` 和取消只影响启动调用，不作用于已脱离的进程。POSIX 的 `/tmp` 日志可能被系统清理（按 tmp 策略），重要输出请自行重定向到持久目录。
 - **超时终止**：远端有 `timeout` 时，超时会连同远端进程组一起终止（支持 `-k` 时再补一次 KILL，缓冲时间可用 `timeoutKillAfterMs` 调整）；远端没有 `timeout` 时只能停止等待，stderr 会提示"命令可能仍在运行"。**取消（Esc）不会立刻杀远端**：通道关闭后远端仍会计时到自己的 deadline。
 - **stdin 恒为 EOF**：远程命令的 stdin 在启动后立即关闭（等价 `</dev/null`），`cat`/`read` 等读 stdin 的命令会直接得到 EOF。
 - **文件工具仍在本地**：`read`/`write`/`edit`/`glob`/`grep` 不受目标影响；远程文件请走对应的远程 shell 工具或右侧栏 SFTP 面板。`working_directory` 只影响本地工具，远程目录用远程 shell 工具的 `workdir` 参数。
-- **并发由 DSH 调度**：插件为单台服务器提供最多 6 条并发通道，但同一轮里多个 `bash` 调用是否并行由 DSH 的工具调度决定。
+- **并发由 DSH 调度**：`remote_exec` 显式声明并行安全，因此一次批量任务会真正并发（受 `batchConcurrency` 上限约束）；原生 `bash` 与 `remote_bash` / `remote_pwsh` 仍是 exclusive 工具，同一轮里的多个 shell 调用按 DSH 调度串行。插件为单台服务器提供最多 6 条并发通道。
 - **目标标识**：DSH 的 bash 卡片是官方渲染且没有装饰插槽，插件不替换卡片；当前用“切换后首条命令 stderr 行 + cwd 前缀（`web-1:/var/log`）+ composer 下方参数行目标指示”标出目标。
 - **侧边栏开关**：开关存放在 `~/.dsh/ssh-workbench/prefs.json`，在插件管理里保存后当前窗口立即生效；关闭时左侧导航不再出现远程工作台入口，右侧栏的「远程工作台」「远程文件」页签保持不变。
 - **终端生命周期**：终端会话跟随工作台页面/页签，关闭页签或离开工作台会结束会话；页面刷新/关闭时通过 `sendBeacon` 尽力补发关闭，但进程崩溃或 Host 异常退出后仍依赖 30 分钟空闲回收（尚未做跨页面保活或重连恢复）。本地终端依赖 Host 的 PTY 服务，不可用时给出提示。
 - **本地文件边界**：工作台的本地文件面板与本地终端默认以**本地用户主目录**为根（`$HOME`，与常规 SSH 客户端的「本地」面板一致，面包屑显示真实路径），越界路径与指向外部的符号链接都会被拒绝；需要固定其他目录时用 `localRoot` 配置（绝对路径或 `~/...`），需要操作主目录以外的本地路径时用本地终端。远程文件仍走 SFTP，远程文件面板默认打开登录 home。
 - **终端渲染资源**：xterm 随客户端 bundle 内置（`vendor/xterm.js` 只是构建输入，不再有运行时脚本路由），不依赖额外脚本路由或 CSP 放行；首次打开工作台时加载。
 - **终端操作边界**：本地/远程终端是用户主动输入，不经过 agent 的审批与黑名单；SSH 权限边界不变。
-- **黑名单是 best-effort**：`bash -c`、base64、脚本文件、解释器 heredoc 正文不会被解析；heredoc 正文会按可执行文本检查（fail-closed，写脚本时可能误拦）。真正的边界是 SSH 最小权限 + host-key + DSH 审批。
+- **黑名单是 best-effort**：`bash -c`、base64、脚本文件、解释器 heredoc 正文不会被解析；heredoc 正文会按可执行文本检查（fail-closed，写脚本时可能误拦）。`remote_exec` 会对每个 task 按自己目标方言逐条过 guard，但仍是 best-effort。真正的边界是 SSH 最小权限 + host-key + DSH 审批。
 
 ## 配置
 
@@ -122,6 +128,9 @@ ssh_workbench_target({ server: "local" })
 | `timeoutKillAfterMs` | `5000` | 远端 `timeout -k` 的宽限：TERM 后多久补 SIGKILL；0 = 只用 TERM |
 | `maxOutputBytes` | `102400` | stdout 保留上限（头尾保留，中间截断） |
 | `maxStderrBytes` | `16384` | stderr 独立保留上限（默认明显小于 stdout，保护上下文） |
+| `maxBatchTasks` | `8` | 一次 `remote_exec` 最多任务数 |
+| `batchConcurrency` | `4` | `remote_exec` 默认并发数；模型可请求更小值，不能超过此配置 |
+| `maxBatchOutputBytes` | `262144` | 一次 `remote_exec` 所有任务共享的 stdout/stderr 总预算 |
 | `transferChunkTimeoutMs` | `30000` | SFTP 分块读写看门狗；卡死时关闭会话，UI 可从 offset 续传 |
 | `connectTimeoutMs` | `15000` | SSH 建连超时 |
 | `hostKeyMode` | `strict` | `strict` / `accept-new` |
