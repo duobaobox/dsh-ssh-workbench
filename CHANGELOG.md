@@ -4,6 +4,16 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.1] - 2026-11-10
+
+### 目标 Dock：执行统计与统一卡片
+
+- composer 下方目标 Dock 改为单/多目标共用的一张锚定卡片：目标行显示名称、active 标记、Windows 例外徽章，以及该目标在本 Session 的执行次数/用时；卡片下方显示本 Session 的远程执行统计（次数、成功、失败、总用时、平均、最近一次）。
+- 统计来自插件的本地 activity 记录：新增 `sessionId`/`durationMs` 字段，`remote_exec` 的每个 task、`remote_bash`/`remote_pwsh` 与原生 bash 路由都会记录；`GET/POST /target` 返回按 Session 聚合的 `stats`。不读取也不伪造 DSH 的模型用时/TTFT/TPS。
+- 去掉底部 Dock 的 `Linux` 标签（原来所有非 Windows 目标都会被标成 Linux）；仅 Windows 目标保留小徽章，资源设置页仍保留平台字段。
+- 多目标点行只切换 active target，底部「打开工作台」进入终端/文件；单目标也先打开统计卡片，不再直接跳转。
+- 测试：237/237 通过（新增 target-stats、activity session/duration、/target stats 与 Dock 结构断言）。
+
 ## [1.7.0] - 2026-11-10
 
 ### 多资源并行执行与目标 Dock

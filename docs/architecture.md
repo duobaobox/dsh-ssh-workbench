@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.0）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.1）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -15,6 +15,7 @@ lib/
     ├── remote-bash.js       tools/execute：把原生 bash 路由到 SSH，映射原生输出值
     ├── remote-bash-tool.js  插件自有 remote_bash / remote_pwsh 工具（Windows 宿主与 Windows 目标）
     ├── remote-exec-tool.js  插件自有 remote_exec：显式目标、一轮 fan-out、并发池、逐任务 guard/超时/输出
+    ├── target-stats.js      按 Session 聚合 activity 中的远程执行次数/成功失败/用时（composer dock）
     ├── shell-adapters.js    方言适配器入口：POSIX 适配器、按方言选择、宿主平台判断
     ├── win32-adapter.js     Windows 适配器：PowerShell -EncodedCommand、UTF-8、退出码、workdir
     ├── dialect.js           目标方言：facts.dialect 优先、platform 仅作提示
@@ -73,7 +74,7 @@ vendor/
 - **逐任务隔离**：每个 task 按自己的 `facts.dialect` 选择 POSIX/Windows 适配器与 guard 规则；超时、传输失败、非零退出码只影响该任务，结果按输入顺序渲染。
 - **输出预算**：一次 batch 共享 `maxBatchOutputBytes`（默认 256 KiB），每个 task 先取 `maxOutputBytes` 与均分预算的较小值，避免一次 fan-out 撑爆上下文。
 - **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
-- **UI**：composer 下方目标 pill 在单目标时显示名字、点击打开工作台；多候选时显示「N 个目标」，点开菜单列出目标与平台，选中后 `POST /target` 只更新 UI/active 目标，不触碰任何执行通道。
+- **UI**：composer 下方目标 pill 单/多目标都打开同一张锚定卡片：目标行显示名字、Windows 徽章、active 标记和该目标执行次数/用时；卡片下方显示本 Session 的执行统计（次数、成功/失败、总用时、平均、最近一次），数据来自 `activity.js` 的本地记录（含 `sessionId`/`durationMs`），不读取也不伪造 DSH 的模型用时/TTFT/TPS。多目标点行通过 `POST /target` 切换 active；底部按钮打开工作台。去掉旧 Linux 标签，只有 Windows 目标显示例外徽章。
 
 ## 多宿主与多方言（v1.5）
 

@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.7.0.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-1.7.1.tgz`。安装后重启/重载插件。
 
 发布包自带纯 JS 的 SSH 依赖，安装过程不需要编译（不需要 Xcode Command Line Tools）、也不额外下载 npm 包，离线机器同样可以安装。
 
@@ -51,7 +51,7 @@ remote_exec({ tasks: [
 
 每个 task 自己指定目标，命令在各自服务器上并发执行，结果按任务顺序返回；这不会改变当前 active target。如果模型仍直接调用 `bash`，一次提到多个资源后当前目标会先被清空，在调用 `ssh_workbench_target` 选择之前会返回 `TARGET_NOT_SELECTED` 错误（不会静默在本机执行）。资源名支持中文/非 ASCII（如 `@测试机`）。
 
-多目标会话里 composer 下方的目标 pill 显示「N 个目标」，点开可以查看每个目标的平台并切换 active target；单目标时仍显示资源名，点击直接打开工作台。
+composer 下方的目标 pill 在单/多目标时都可以点开：卡片列出目标（Windows 目标带小徽章）、active 标记和本会话远程执行统计（次数、成功/失败、总用时、平均、最近一次）；多目标可点行切换 active，底部「打开工作台」进入终端/文件。统计是插件本地记录，不含模型推理时间。
 
 ## 5. 远程工作台
 

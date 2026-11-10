@@ -34,6 +34,24 @@ test('activity store appends newest-first and lists a bounded page', () => {
   assert.equal(raw.length, 2)
 })
 
+test('activity store persists session and duration used by the target dock', () => {
+  const file = tempFile()
+  const store = createActivityStore({ file })
+  const first = store.append({ kind: 'exec', server: 'web-1', outcome: 'success', sessionId: 's1', durationMs: 12.6 })
+  assert.equal(first.sessionId, 's1')
+  assert.equal(first.durationMs, 13)
+
+  // Missing/empty/invalid values are omitted rather than written as junk.
+  const second = store.append({ kind: 'exec', server: 'web-1', outcome: 'success', sessionId: '', durationMs: -1 })
+  assert.equal('sessionId' in second, false)
+  assert.equal('durationMs' in second, false)
+
+  const persisted = JSON.parse(fs.readFileSync(file, 'utf8'))
+  assert.equal(persisted[1].sessionId, 's1')
+  assert.equal(persisted[1].durationMs, 13)
+  assert.equal('sessionId' in persisted[0], false)
+})
+
 test('activity store caps entries and tolerates a corrupt file', () => {
   const file = tempFile()
   const store = createActivityStore({ file, maxEntries: 3 })
