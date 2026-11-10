@@ -416,6 +416,9 @@ test('the composer target dock mirrors the usage card', () => {
   assert.doesNotMatch(bundleSource, /target\.openWorkspace/)
   assert.doesNotMatch(bundleSource, /post\('\/target'/)
   assert.doesNotMatch(bundleSource, /menuitemradio/)
+  // Visibility follows the current target/candidates, not historical stats.
+  assert.match(bundleSource, /Historical stats\s*\n\s*\/\/ must not keep it visible/)
+  assert.doesNotMatch(bundleSource, /for \(const bucket of statsServers\) \{[\s\S]{0,200}?names\.push/)
   assert.doesNotMatch(bundleSource, /target-row-check/)
   assert.doesNotMatch(bundleSource, /formatExecutionDuration/)
   assert.doesNotMatch(bundleSource, /target\.statsOutcome/)

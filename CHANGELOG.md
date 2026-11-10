@@ -4,6 +4,14 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.5] - 2026-11-10
+
+### 目标 Dock 跟随远程上下文显示
+
+- 修复切回本地后底部“远程执行”卡仍常驻：可见性现在只由本会话 active target 和 @ 候选决定，历史统计不再参与。
+- `ssh_workbench_target({ server: "local" })` 清空 active/candidates 后，dock 随之隐藏；重新 @ 或选中远程目标后恢复。
+- 测试：236/236 通过。
+
 ## [1.7.4] - 2026-11-10
 
 ### 目标 Dock 弹层改用 body portal
