@@ -1,3 +1,18 @@
+# 更新日志
+
+记录 `dsh-ssh-workbench` 的重要变更。版本号遵循语义化版本。
+
+> 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
+
+## [1.7.3] - 2026-11-10
+
+### 目标 Dock：对齐 Token 用量弹窗的只读精简卡
+
+- 直接采用 DSH 内置 Token 用量弹窗的视觉结构：标题行（图标 + 「远程执行」+ 右侧总次数）、0.5px 分隔线、label / value 明细网格。
+- 明细只保留本 Session 的目标名与工具执行次数；删除目标选中/切换、Windows 徽章、成功/失败、总用时/平均/最近、插件统计提示与「打开工作台」按钮。
+- `GET /target` 仍返回聚合后的 `stats` 供前端计数；Dock 不再发起 `POST /target`，active 只由 `ssh_workbench_target` 或 `@` 资源决定。
+- 测试：236/236 通过（更新 TargetDock 结构与样式断言）。
+
 ## [1.7.2] - 2026-11-10
 
 ### 目标 Dock 简化为只读执行统计
@@ -7,12 +22,6 @@
 - 移除 `POST /target` 路由及其测试；切换 active 仍通过 `ssh_workbench_target` 或 `@` 资源完成，TargetDock 不改变执行状态。
 - 文档同步：README、quickstart、architecture 不再描述目标行切换或打开工作台按钮。
 - 测试：236/236 通过（移除 1 个 POST 路由测试，新增只读结构断言）。
-
-# 更新日志
-
-记录 `dsh-ssh-workbench` 的重要变更。版本号遵循语义化版本。
-
-> 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
 ## [1.7.1] - 2026-11-10
 
