@@ -403,7 +403,7 @@ test('the composer target dock mirrors the usage card', () => {
   assert.match(bundleSource, /'target\.popTitle'/)
   assert.match(bundleSource, /'target\.multiChip'/)
   assert.match(bundleSource, /'target\.rowCount'/)
-  assert.match(bundleSource, /const multi = names\.length > 1/)
+  assert.match(bundleSource, /const multi = !target && names\.length > 1/)
   assert.match(bundleSource, /'aria-haspopup': 'dialog'/)
   assert.match(bundleSource, /data-sdh-target-dock/)
   // The panel is portaled to body so a composer stacking context cannot hide it.

@@ -4,6 +4,14 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、模型工具 `ssh_workbench_target`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.6] - 2026-11-10
+
+### 目标 pill 优先显示当前 shell 目标
+
+- 多 @ 之后再选定单个 target，pill 现在显示该 target 名称，不再停留在「N 个目标」。
+- 只有在多个候选且尚未选定 shell 目标时，pill 才显示聚合数量；卡片仍列出当前候选与 active 的执行次数。
+- 切回 `local` 时仍隐藏；补目标 pill 状态测试，236/236 通过。
+
 ## [1.7.5] - 2026-11-10
 
 ### 目标 Dock 跟随远程上下文显示

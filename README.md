@@ -27,7 +27,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | 结果输出 | POSIX 宿主上的 POSIX 目标仍是 DSH 原生 bash 终端卡片；`remote_bash` / `remote_pwsh` 返回带 target / cwd / 退出码 / stdout / stderr 的文本结果 |
 | 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `/tmp` 日志，Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
 | 平台徽标 | 资源列表/设置页显示 **Linux / Windows** 徽标（来自连接后探测的 `facts.dialect`，不是手填字段）；连接测试结果也显示探测到的平台 |
-| 目标切换 | `ssh_workbench_target({ server: "web-1" })`；`server: "local"` 回到本机；切换后首条命令的 stderr、bash 卡片 cwd 前缀和 composer 下方目标 dock 都会标出当前目标；点开 dock 只读展示本会话各目标的远程执行次数 |
+| 目标切换 | `ssh_workbench_target({ server: "web-1" })`；`server: "local"` 回到本机；切换后首条命令的 stderr、bash 卡片 cwd 前缀和 composer 下方目标 pill 都会标出当前目标；pill 优先显示 active target，只有多个候选且尚未选定 shell 目标时显示「N 个目标」；点开 dock 只读展示本会话各目标的远程执行次数 |
 | 远程工作台 | 左侧导航的独立页面：左侧终端（本地终端 / 远程 SSH 终端），右侧文件管理（本地用户主目录 / 远程 SFTP，远程默认打开登录 home），文件可**在工作台内直接预览**，拖动分隔条调整宽度；每个页签一个终端会话，仅活动页签轮询、非活动页签暂停并在切回时续读（UI 能力，不占模型工具） |
 | 侧边栏开关 | 插件管理 → 远程工作台 → 页面里的「在侧边栏显示远程工作台」可关闭左侧导航入口；关闭后 `@资源名` 远程执行、设置页与模型工具不受影响 |
 | 危险命令黑名单 | `rm -rf /`、`mkfs`、`dd of=/dev/*`、`fdisk/parted/wipefs`、改根目录权限、fork bomb 等同步拦截；多行脚本、`&`、引号/转义、路径变体、`$()`/`eval` 都会先还原再判断；其他命令交给 DSH 审批 |
@@ -47,7 +47,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.5.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.6.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 0.5 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
