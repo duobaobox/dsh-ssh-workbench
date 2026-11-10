@@ -399,16 +399,19 @@ test('Windows local paths keep their separator in breadcrumbs and preview names'
   assert.match(bundleSource, /platformText\(server\.dialect \?\? server\.platform\)/)
 })
 
-test('the composer target dock shows targets and plugin execution stats', () => {
+test('the composer target dock is a read-only execution summary', () => {
   assert.match(bundleSource, /'target\.popTitle'/)
   assert.match(bundleSource, /'target\.multiChip'/)
-  assert.match(bundleSource, /'target\.statsTitle'/)
+  assert.match(bundleSource, /'target\.statsOutcome'/)
   assert.match(bundleSource, /'target\.statsHint'/)
   assert.match(bundleSource, /const multi = names\.length > 1/)
-  assert.match(bundleSource, /post\('\/target', \{ session: sessionId, server: name \}\)/)
   assert.match(bundleSource, /'aria-haspopup': 'dialog'/)
   assert.match(bundleSource, /data-sdh-target-dock/)
   assert.match(bundleSource, /formatExecutionDuration/)
+  assert.doesNotMatch(bundleSource, /target\.openWorkspace/)
+  assert.doesNotMatch(bundleSource, /post\('\/target'/)
+  assert.doesNotMatch(bundleSource, /menuitemradio/)
+  assert.doesNotMatch(bundleSource, /target-row-check/)
   // The richer single/multiple card is anchored custom UI, not a native menu.
   const dockStart = bundleSource.indexOf('function TargetDock')
   const dockEnd = bundleSource.indexOf('Insert one native reference chip', dockStart)

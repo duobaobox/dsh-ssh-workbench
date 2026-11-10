@@ -370,25 +370,6 @@ test('the target route exposes live session data', async () => {
 
 })
 
-test('POST target switches the active target for the dock', async () => {
-  const { deps, state } = makeDeps()
-  state.targetState = { active: null, candidates: ['web-1', 'db-1'], version: 2 }
-  const handler = createRoutes(deps)
-
-  const response = await call(handler, 'POST', '/dsh-ssh-workbench/target', { session: 's1', server: 'web-1' })
-  assert.equal(response.status, 200)
-  assert.equal(response.json.target, 'web-1')
-  assert.deepEqual(response.json.candidates, ['web-1', 'db-1'])
-  assert.equal(response.json.version, 3)
-
-  const missing = await call(handler, 'POST', '/dsh-ssh-workbench/target', { session: 's1', server: 'nope' })
-  assert.equal(missing.status, 400)
-  assert.match(missing.json.error, /unknown resource/)
-  const noSession = await call(handler, 'POST', '/dsh-ssh-workbench/target', { server: 'web-1' })
-  assert.equal(noSession.status, 400)
-  assert.match(noSession.json.error, /session is required/)
-})
-
 test('target routes include this session execution stats', async () => {
   const { deps, state } = makeDeps()
   state.targetState = { active: 'web-1', candidates: ['web-1', 'db-1'], version: 2 }
@@ -408,11 +389,6 @@ test('target routes include this session execution stats', async () => {
   assert.equal(target.json.stats.averageMs, 175)
   assert.equal(target.json.stats.lastAt, '2026-11-10T08:00:03.000Z')
   assert.deepEqual(target.json.stats.servers.map((bucket) => bucket.name), ['web-1', 'db-1'])
-
-  const response = await call(handler, 'POST', '/dsh-ssh-workbench/target', { session: 's1', server: 'web-1' })
-  assert.equal(response.status, 200)
-  assert.equal(response.json.stats.count, 2)
-  assert.deepEqual(response.json.stats.servers.map((bucket) => bucket.name), ['web-1', 'db-1'])
 })
 
 test('server update closes the target transfer sessions', async () => {
