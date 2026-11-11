@@ -4,6 +4,17 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [2.1.0] - 2026-11-11
+
+### 远程文件工具
+
+- 新增 `remote_read`、`remote_glob`、`remote_grep`：面向运维应急的远程文件读取/查找/搜索，全部显式 `server`，通过 SFTP（read/glob）或目标方言命令（grep）执行，并受结果/输出上限约束。
+- 新增 `remote_write`、`remote_edit`：默认关闭，需在配置中显式设置 `remoteFileWrite: true`；`remote_edit` 默认要求 oldText 唯一匹配，可用 `replaceAll: true` 覆盖。
+- 每轮上下文会列出远程文件工具与写开关状态；原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地。
+- 新增配置：`remoteFileReadBytes`（262144）、`remoteFileEditBytes`（2097152）、`remoteFileWrite`（false）、`remoteGlobMaxResults`（200）、`remoteGlobMaxDepth`（4）、`remoteGrepMaxResults`（200）。
+- 远程文件操作会记录到执行活动；`remote_write`/`remote_edit` 非原子，修改关键文件前请先备份。
+- 测试 218/218；版本 2.1.0。
+
 ## [2.0.0] - 2026-11-10
 
 ### 执行模型：每个远程调用显式带目标

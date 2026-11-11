@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v2.0.0）
+# SSH Workbench（dsh-ssh-workbench）架构（v2.1.0）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -6,7 +6,7 @@
 
 ```
 lib/
-├── index.js                 插件入口：Config、apply、工具注册（remote_exec + remote_bash + remote_pwsh）
+├── index.js                 插件入口：Config、apply、工具注册（remote_exec + remote_bash + remote_pwsh + remote 文件工具）
 ├── routes.js                UI 数据面：资源管理 / 连接测试 / SFTP 文件面板 / 侧边栏偏好
 ├── client.js                Client 半片：左侧导航远程工作台、设置页、@ 引用 chip、右侧栏文件面板
 └── core/
@@ -15,6 +15,7 @@ lib/
     ├── remote-bash.js       POSIX 远程 shell 辅助函数：workdir、超时包装、原生值映射
     ├── remote-bash-tool.js  显式 server 的 remote_bash / remote_pwsh 工具
     ├── remote-exec-tool.js  插件自有 remote_exec：显式目标、一轮 fan-out、并发池、逐任务 guard/超时/输出
+    ├── remote-file-tools.js 远程文件工具：remote_read/write/edit/glob/grep（SFTP + 方言 grep；写开关）
     ├── target-stats.js      按 Session 聚合 activity 中的远程执行次数（composer dock）
     ├── server-ref.js        资源名/ID 解析与 requireServerRef 错误
     ├── shell-adapters.js    方言适配器入口：POSIX 适配器、按方言选择、宿主平台判断
@@ -53,10 +54,10 @@ vendor/
    - 从宿主消息里提取 `@名字`，匹配服务器清单；
    - 仅记录为 @ 提示（candidates），不产生 active target；每轮注入资源清单与显式 server 工具规则，模型自行选择目标；
    - 注入一条 user-role 资源上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
-3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
+3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`，或远程文件工具 `remote_read` / `remote_glob` / `remote_grep`（写入另需 `remoteFileWrite`）。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
 4. DSH 审批（本插件不参与）。
 5. `ctx.tools.guard()`（`guard.js`）：从 `arguments.server`（或 `remote_exec.tasks[]` 的每个 server）解析目标，按对应方言检查黑名单 → 命中直接拒绝。`gate.js` 先把每段还原成 argv words（去引号/转义、剥 `sudo`/`timeout` 等包装、路径规范化、重定向按 token、`$()`/`eval` 递归）再匹配。
-6. 工具实现（`remote-bash-tool.js` / `remote-exec-tool.js`）：
+6. 工具实现（`remote-bash-tool.js` / `remote-exec-tool.js` / `remote-file-tools.js`）：
    - `remote_bash` / `remote_pwsh` 处理 `workdir`（绝对路径 / `~` / 相对路径 → `$HOME` 前缀）；
    - 逐 server 解析方言与 `timeout` 能力（`kill`/`basic`/`none` + 登录 shell 路径；`remote_exec` 的 `probe:false` 跳过探测）；
    - 可用时把命令包成 `timeout [-k N] <秒> '<shell>' -c '<命令>'`，让客户端超时同时终止远端进程组；
@@ -105,7 +106,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 - `agent/pre-step`：返回 `{ kind: 'enter', messages }`，改写必须 spread。
 - `ctx.tools.guard()`：同步、单调的拒绝；在审批之后执行。
 - 原生 `bash` 输出值：`{ kind:'foreground', cwd, exitCode, signal, timedOut, aborted, timeoutMs, stdout, stderr }`。
-- 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh` 在两种宿主上都注册；原生 `bash` / `pwsh` 保持本地语义。`remote_exec` 声明 `isConcurrencySafe:true`，shell 工具保持 exclusive。
+- 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh`、`remote_read`、`remote_glob`、`remote_grep`、`remote_write`、`remote_edit` 在两种宿主上都注册；默认只读工具可用，写工具在 `remoteFileWrite=true` 前明确拒绝。原生 `bash` / `pwsh` / `read` / `write` / `edit` / `glob` / `grep` 保持本地语义。`remote_exec` 与只读文件工具声明 `isConcurrencySafe:true`，shell 与写文件工具保持 exclusive。
 
 ## 目标状态生命周期
 

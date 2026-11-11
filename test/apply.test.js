@@ -121,7 +121,7 @@ test('plugin exports the cordis contract', () => {
 
 test('apply registers explicit-target remote tools on both Hosts', () => {
   const h = makeHarness()
-  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_exec', 'remote_pwsh'])
+  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_edit', 'remote_exec', 'remote_glob', 'remote_grep', 'remote_pwsh', 'remote_read', 'remote_write'])
   const remoteBash = h.tools.find((tool) => tool.name === 'remote_bash')
   assert.deepEqual(Object.keys(remoteBash.parameters), ['server', 'command', 'workdir', 'timeoutMs', 'run_in_background'])
   const remoteExec = h.tools.find((tool) => tool.name === 'remote_exec')
@@ -141,6 +141,12 @@ test('publicConfig exposes only live settings', () => {
   assert.equal(config.maxBatchTasks, 8)
   assert.equal(config.batchConcurrency, 4)
   assert.equal(config.maxBatchOutputBytes, 262144)
+  assert.equal(config.remoteFileReadBytes, 262144)
+  assert.equal(config.remoteFileEditBytes, 2097152)
+  assert.equal(config.remoteFileWrite, false)
+  assert.equal(config.remoteGlobMaxResults, 200)
+  assert.equal(config.remoteGlobMaxDepth, 4)
+  assert.equal(config.remoteGrepMaxResults, 200)
   assert.equal('factsTtlMs' in config, false)
   assert.equal('httpProbeAllowedHosts' in config, false)
 })
@@ -158,6 +164,8 @@ test('pre-step injects the resource context without an @mention', async () => {
   assert.match(text, /Managed remote resources/)
   assert.match(text, /remote_bash/)
   assert.match(text, /remote_exec/)
+  assert.match(text, /remote_read/)
+  assert.match(text, /remote_write/)
   assert.match(text, /web-1/)
 })
 
@@ -215,6 +223,6 @@ test('workbench local root defaults to the user home and supports an override', 
 
 test('Windows Hosts register the same explicit-target tools', () => {
   const h = makeHarness({ hostPlatform: 'win32' })
-  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_exec', 'remote_pwsh'])
+  assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_edit', 'remote_exec', 'remote_glob', 'remote_grep', 'remote_pwsh', 'remote_read', 'remote_write'])
   assert.equal(listen(h, 'tools/execute').length, 0)
 })

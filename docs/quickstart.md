@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-2.0.0.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-2.1.0.tgz`。安装后重启/重载插件。
 
 发布包自带纯 JS 的 SSH 依赖，安装过程不需要编译（不需要 Xcode Command Line Tools）、也不额外下载 npm 包，离线机器同样可以安装。
 
@@ -66,8 +66,8 @@ composer 下方的 pill 只读展示本会话各目标的远程执行次数，�
 
 ## 6. 常见问题
 
-**为什么 `read` / `write` / `edit` 读不到远程文件？**
-这些文件工具始终作用于 DSH 主机（POSIX 宿主上的原生 `bash` 或远程 shell 工具都不会改变这一点），误用 `write` 会写到本机。远程文件用对应的远程 shell 工具操作（POSIX 目标：`cat`、`tee`、`sed`；Windows 目标：`Get-Content`、`Set-Content`），或用右侧栏 SFTP 面板。
+**远程文件怎么读写？**
+原生 `read` / `write` / `edit` / `glob` / `grep` 始终作用于 DSH 主机；远程文件请让模型使用显式的远程文件工具：`remote_read`、`remote_glob`、`remote_grep`。写入默认关闭，需在插件配置里设置 `remoteFileWrite: true` 后才可使用 `remote_write` / `remote_edit`；后者默认要求 oldText 唯一匹配。大文件、二进制和上传/下载仍建议用右侧栏 SFTP 面板。远程写入不是原子操作，修改关键配置前先备份。
 
 **命令很慢/超时？**
 远程命令默认 120s，可用远程 shell 工具的 `timeoutMs` 参数（原生 `bash` / `remote_bash` / `remote_pwsh`）或插件配置 `commandTimeoutMs` 调整。连接池会复用连接，第一次会稍慢。超时后如果远端有 `timeout`，整个远端进程组会被终止（TERM 后按 `timeoutKillAfterMs` 再补 KILL）；没有 `timeout` 的服务器（如 macOS）只能停止等待，命令可能还在跑，结果 stderr 会提示这一点。**取消（Esc）不会立即杀远端**，远端仍会计时到自己的 deadline。
