@@ -4,6 +4,15 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [2.2.0] - 2026-11-11
+
+### 实时远程目标指示
+
+- composer 下方的执行 pill 现在会在远程调用进行中显示实时目标：单目标显示 `host165 · 执行中`，多目标显示 `2 个目标 · 执行中`；调用结束后回退为本会话执行次数。
+- 通过 around-dispatch 的 `tools/execute` 钩子维护内存中的 in-flight 记录，覆盖 `remote_bash`、`remote_pwsh`、`remote_exec` 以及新增的 `remote_read`/`remote_write`/`remote_edit`/`remote_glob`/`remote_grep`；不恢复 active target，不改变任何工具的执行语义。
+- `/target` 新增 `running` 字段；Dock 轮询从 10 秒降到 1.5 秒，执行中即使尚无完成记录也会显示。
+- 测试 222/222；版本 2.2.0。
+
 ## [2.1.0] - 2026-11-11
 
 ### 远程文件工具

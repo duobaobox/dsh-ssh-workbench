@@ -41,6 +41,7 @@ function makeDeps() {
     invalidated: [],
     closedTransfers: [],
     targetState: { candidates: [], version: 0 },
+    running: { count: 0, servers: [] },
     prefs: { sidebar: true },
     terminals: [],
     localfsCalls: [],
@@ -121,6 +122,7 @@ function makeDeps() {
         return true
       },
     },
+    liveExecutions: { snapshot: () => state.running },
     targets: {
       get: () => state.targetState,
     },
@@ -379,6 +381,16 @@ test('target routes include this session execution stats', async () => {
   assert.equal(target.json.stats.averageMs, 175)
   assert.equal(target.json.stats.lastAt, '2026-11-10T08:00:03.000Z')
   assert.deepEqual(target.json.stats.servers.map((bucket) => bucket.name), ['db-1', 'web-1'])
+  assert.deepEqual(target.json.running, { count: 0, servers: [] })
+})
+
+test('the target route exposes live remote calls', async () => {
+  const { deps, state } = makeDeps()
+  state.running = { count: 1, servers: [{ name: 'web-1', count: 1, startedAt: 1 }] }
+  const handler = createRoutes(deps)
+  const target = await call(handler, 'GET', '/dsh-ssh-workbench/target?session=s1')
+  assert.equal(target.status, 200)
+  assert.deepEqual(target.json.running, state.running)
 })
 
 test('server update closes the target transfer sessions', async () => {

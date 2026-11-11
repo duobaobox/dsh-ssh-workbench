@@ -4,6 +4,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { createLiveExecutions } from '../lib/core/live-executions.js'
+
 // Keep plugin persistence out of the real harness home.
 process.env.DSH_SSH_WORKBENCH_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-ssh-workbench-apply-'))
 
@@ -27,7 +29,7 @@ function human(text, id = 'm1') {
   return { role: 'user', id, source: { kind: 'user', rpcId: 'r1' }, content: [{ type: 'text', text }] }
 }
 
-function makeHarness({ runtime, config = CONFIG, hostPlatform } = {}) {
+function makeHarness({ runtime, config = CONFIG, hostPlatform, liveExecutions } = {}) {
   const tools = []
   const guards = []
   const listeners = []
@@ -104,6 +106,7 @@ function makeHarness({ runtime, config = CONFIG, hostPlatform } = {}) {
     knownHosts: { verify: () => true, has: () => false, trust() {}, list: () => [], revoke: () => true, invalidate() {} },
     createUserMessage: (input) => ({ ...input, role: 'user', id: 'ctx-message' }),
     hostPlatform,
+    liveExecutions,
   })
   return { ctx, tools, guards, listeners, effects, injected, execCalls }
 }
@@ -128,9 +131,26 @@ test('apply registers explicit-target remote tools on both Hosts', () => {
   assert.deepEqual(Object.keys(remoteExec.parameters), ['tasks', 'concurrency', 'probe', 'connectTimeoutMs'])
   assert.equal(remoteExec.isConcurrencySafe({}), true)
   assert.equal(h.guards.length, 1)
-  assert.equal(listen(h, 'tools/execute').length, 0, 'native bash is no longer intercepted')
+  assert.equal(listen(h, 'tools/execute').length, 1, 'live execution indicator wraps dispatch without choosing a target')
   assert.equal(listen(h, 'agent/pre-step').length, 1)
   assert.equal(listen(h, 'agent/disposed').length, 1)
+})
+
+test('the live indicator tracks a remote dispatch and releases it on settle', async () => {
+  const live = createLiveExecutions({ now: () => 1 })
+  const h = makeHarness({ liveExecutions: live })
+  const [handler] = listen(h, 'tools/execute')
+  assert.equal(typeof handler, 'function')
+  let release
+  const pending = handler(
+    { name: 'remote_exec', arguments: { tasks: [{ server: 'web-1' }, { server: 'db-1' }] }, agent: { session: { id: 's1' } } },
+    () => new Promise((resolve) => { release = resolve }),
+  )
+  assert.deepEqual(live.snapshot('s1').servers.map((entry) => entry.name), ['web-1', 'db-1'])
+  assert.equal(live.snapshot('s1').count, 1)
+  release('ok')
+  await pending
+  assert.deepEqual(live.snapshot('s1'), { count: 0, servers: [] })
 })
 
 test('publicConfig exposes only live settings', () => {
@@ -224,5 +244,5 @@ test('workbench local root defaults to the user home and supports an override', 
 test('Windows Hosts register the same explicit-target tools', () => {
   const h = makeHarness({ hostPlatform: 'win32' })
   assert.deepEqual(h.tools.map((tool) => tool.name).sort(), ['remote_bash', 'remote_edit', 'remote_exec', 'remote_glob', 'remote_grep', 'remote_pwsh', 'remote_read', 'remote_write'])
-  assert.equal(listen(h, 'tools/execute').length, 0)
+  assert.equal(listen(h, 'tools/execute').length, 1)
 })

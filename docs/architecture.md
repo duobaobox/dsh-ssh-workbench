@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v2.1.0）
+# SSH Workbench（dsh-ssh-workbench）架构（v2.2.0）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 

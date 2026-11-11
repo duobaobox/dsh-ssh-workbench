@@ -342,6 +342,8 @@ test('Windows local paths keep their separator in breadcrumbs and preview names'
 
 test('the composer execution dock mirrors the usage card', () => {
   assert.match(bundleSource, /'target\.execChip'/)
+  assert.match(bundleSource, /'target\.runningOne'/)
+  assert.match(bundleSource, /'target\.runningMany'/)
   assert.match(bundleSource, /'target\.execTitle'/)
   assert.match(bundleSource, /'target\.popTitle'/)
   assert.match(bundleSource, /'target\.rowCount'/)
@@ -364,6 +366,8 @@ test('the composer execution dock mirrors the usage card', () => {
   assert.ok(dockStart >= 0 && dockEnd > dockStart)
   const dockSource = bundleSource.slice(dockStart, dockEnd)
   assert.match(dockSource, /const rows = statsServers\.filter/)
-  assert.match(dockSource, /rows\.length === 0 \|\| total === 0/)
+  assert.match(dockSource, /runningNames\.length === 0/)
+  assert.match(dockSource, /setInterval\(load, 1500\)/)
+  assert.match(dockSource, /target\.runningLabel/)
   assert.doesNotMatch(dockSource, /api\('\/servers'/)
 })
