@@ -164,6 +164,7 @@ test('publicConfig exposes only live settings', () => {
   assert.equal(config.remoteFileReadBytes, 262144)
   assert.equal(config.remoteFileEditBytes, 2097152)
   assert.equal(config.remoteFileWrite, false)
+  assert.equal(config.systemFileHierarchy, false)
   assert.equal(config.remoteGlobMaxResults, 200)
   assert.equal(config.remoteGlobMaxDepth, 4)
   assert.equal(config.remoteGrepMaxResults, 200)

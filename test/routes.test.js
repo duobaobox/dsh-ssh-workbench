@@ -238,6 +238,24 @@ test('routes expose and toggle the remote write preference', async () => {
   assert.equal(empty.status, 400)
 })
 
+test('routes expose and toggle the hierarchical system file browser preference', async () => {
+  const { deps, state } = makeDeps()
+  const handler = createRoutes(deps)
+
+  const opened = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', { systemFileHierarchy: true })
+  assert.equal(opened.status, 200)
+  assert.equal(opened.json.prefs.systemFileHierarchy, true)
+  assert.equal(state.prefs.systemFileHierarchy, true)
+
+  const closed = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', { systemFileHierarchy: false })
+  assert.equal(closed.status, 200)
+  assert.equal(closed.json.prefs.systemFileHierarchy, false)
+  assert.equal(state.prefs.systemFileHierarchy, false)
+
+  const empty = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', {})
+  assert.equal(empty.status, 400)
+})
+
 test('routes expose terminal sessions and the local workbench filesystem', async () => {
   const { deps, state } = makeDeps()
   const handler = createRoutes(deps)

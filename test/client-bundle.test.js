@@ -190,7 +190,7 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   const bareTree = bareElement.type(bareElement.props)
   assert.doesNotMatch(JSON.stringify(bareTree), /guide\.description/)
   const titles = registered.filter((entry) => entry.slot === 'sidebar.right.pane.tab.title')
-  assert.deepEqual(titles.map((entry) => entry.options.key).sort(), ['dsh-ssh-workbench/file', 'dsh-ssh-workbench/files', 'dsh-ssh-workbench/servers'])
+  assert.deepEqual(titles.map((entry) => entry.options.key).sort(), ['dsh-ssh-workbench/file', 'dsh-ssh-workbench/files', 'dsh-ssh-workbench/servers', 'dsh-ssh-workbench/system-files'])
   const viewerTabs = tabs.filter((entry) => entry.definition.kind === 'sdh-file')
   assert.equal(viewerTabs.length, 1)
   assert.equal(viewerTabs[0].definition.multiple, true)
@@ -204,7 +204,7 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   for (const entry of registered.filter((item) => ['settings.section', 'sidebar.right.pane.tab'].includes(item.slot))) {
     assert.equal(typeof entry.component, 'function')
   }
-  assert.equal(registered.filter((entry) => entry.slot === 'sidebar.right.pane.tab').length, 3)
+  assert.equal(registered.filter((entry) => entry.slot === 'sidebar.right.pane.tab').length, 4)
   // The right-sidebar servers panel is a Luminax-style managed-resources view;
   // it must render (with the mocked React hooks) and expose search/add rows.
   const panel = registered.find((entry) => entry.slot === 'sidebar.right.pane.tab' && entry.options.key === 'dsh-ssh-workbench/servers')
@@ -268,6 +268,23 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
 
   const toolViews = registered.filter((entry) => entry.slot === 'tool.call.toolview')
   assert.deepEqual(toolViews.map((entry) => entry.options.key), [], 'v2 has no target-selector tool')
+})
+
+test('the bundle config form exposes the system file hierarchy switch', () => {
+  assert.match(bundleSource, /workbench\.hierarchyTitle/)
+  assert.match(bundleSource, /systemFileHierarchy: hierarchyEnabled === true/)
+  assert.match(bundleSource, /prefsBody\?\.config\?\.systemFileHierarchy/)
+  assert.match(bundleSource, /'data-sdh-switch': options\.key/)
+})
+
+test('the hierarchical system files page takes over the native files kind', () => {
+  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'files'/, 'registers an extension for the native files kind')
+  assert.match(bundleSource, /kind: 'files'\s*,\s*\n\s*keepMounted: true/)
+  assert.match(bundleSource, /lockRoot: true/)
+  assert.match(bundleSource, /openNative: true/)
+  assert.match(bundleSource, /dsh-resource:\/\/file\/session\/\$\{encodeURIComponent\(props\.sessionId\)\}/)
+  assert.match(bundleSource, /withinRoot\(target\)/)
+  assert.match(bundleSource, /files\.outsideRoot/)
 })
 
 test('the bundle config form exposes both the sidebar and remote-write switches', () => {

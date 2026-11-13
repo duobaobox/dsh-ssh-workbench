@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workbench",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；显式目标的远程 shell 与 read/glob/grep，Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
   "type": "module",
   "main": "lib/index.js",

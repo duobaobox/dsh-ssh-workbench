@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { DEFAULT_PREFS, loadPrefs, resolveRemoteFileWrite, savePrefs } from '../lib/core/prefs.js'
+import { DEFAULT_PREFS, loadPrefs, resolveRemoteFileWrite, resolveSystemFileHierarchy, savePrefs } from '../lib/core/prefs.js'
 import { prefsPath } from '../lib/core/paths.js'
 
 function isolatedDir() {
@@ -18,9 +18,10 @@ test('preferences default to an enabled sidebar and persist atomically', () => {
   assert.deepEqual(loadPrefs(), DEFAULT_PREFS)
   assert.equal(DEFAULT_PREFS.sidebar, true)
   assert.equal(DEFAULT_PREFS.remoteFileWrite, null)
+  assert.equal(DEFAULT_PREFS.systemFileHierarchy, null)
 
   const saved = savePrefs({ sidebar: false })
-  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null })
+  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null, systemFileHierarchy: null })
   assert.equal(loadPrefs().sidebar, false)
 
   const stat = fs.statSync(prefsPath())
@@ -43,10 +44,10 @@ test('unknown fields and non-boolean values are ignored', () => {
   isolatedDir()
   fs.mkdirSync(path.dirname(prefsPath()), { recursive: true })
   fs.writeFileSync(prefsPath(), JSON.stringify({ sidebar: 'yes', extra: 1 }))
-  assert.deepEqual(loadPrefs(), { sidebar: true, remoteFileWrite: null })
+  assert.deepEqual(loadPrefs(), { sidebar: true, remoteFileWrite: null, systemFileHierarchy: null })
 
   const saved = savePrefs({ sidebar: false, extra: 'ignored' })
-  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null })
+  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null, systemFileHierarchy: null })
 })
 
 test('the write override is tri-state and falls back to the config', () => {
@@ -64,4 +65,20 @@ test('the write override is tri-state and falls back to the config', () => {
   assert.equal(loadPrefs().remoteFileWrite, null)
   assert.equal(resolveRemoteFileWrite({ remoteFileWrite: true }, loadPrefs()), true)
   assert.equal(resolveRemoteFileWrite({ remoteFileWrite: false }, loadPrefs()), false)
+})
+
+test('the system file hierarchy override is tri-state and falls back to the config', () => {
+  isolatedDir()
+  assert.equal(resolveSystemFileHierarchy({ systemFileHierarchy: true }, loadPrefs()), true)
+  assert.equal(resolveSystemFileHierarchy({ systemFileHierarchy: false }, loadPrefs()), false)
+
+  savePrefs({ systemFileHierarchy: true })
+  assert.equal(resolveSystemFileHierarchy({ systemFileHierarchy: false }, loadPrefs()), true)
+
+  savePrefs({ systemFileHierarchy: false })
+  assert.equal(resolveSystemFileHierarchy({ systemFileHierarchy: true }, loadPrefs()), false)
+
+  savePrefs({ systemFileHierarchy: null })
+  assert.equal(loadPrefs().systemFileHierarchy, null)
+  assert.equal(resolveSystemFileHierarchy({ systemFileHierarchy: true }, loadPrefs()), true)
 })

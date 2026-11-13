@@ -10,7 +10,9 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.7.1.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-1.7.2.tgz`。安装后重启/重载插件。
+
+插件管理 → 远程工作台里可以打开「系统文件浏览使用层级模式」：右侧栏「工作区文件」会换成插件的层级浏览器，范围仅限当前会话目录；默认关闭。
 
 发布包自带纯 JS 的 SSH 依赖，安装过程不需要编译（不需要 Xcode Command Line Tools）、也不额外下载 npm 包，离线机器同样可以安装。
 
