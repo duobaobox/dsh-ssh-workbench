@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import { DEFAULT_PREFS, loadPrefs, savePrefs } from '../lib/core/prefs.js'
+import { DEFAULT_PREFS, loadPrefs, resolveRemoteFileWrite, savePrefs } from '../lib/core/prefs.js'
 import { prefsPath } from '../lib/core/paths.js'
 
 function isolatedDir() {
@@ -17,9 +17,10 @@ test('preferences default to an enabled sidebar and persist atomically', () => {
   const dir = isolatedDir()
   assert.deepEqual(loadPrefs(), DEFAULT_PREFS)
   assert.equal(DEFAULT_PREFS.sidebar, true)
+  assert.equal(DEFAULT_PREFS.remoteFileWrite, null)
 
   const saved = savePrefs({ sidebar: false })
-  assert.deepEqual(saved, { sidebar: false })
+  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null })
   assert.equal(loadPrefs().sidebar, false)
 
   const stat = fs.statSync(prefsPath())
@@ -42,8 +43,25 @@ test('unknown fields and non-boolean values are ignored', () => {
   isolatedDir()
   fs.mkdirSync(path.dirname(prefsPath()), { recursive: true })
   fs.writeFileSync(prefsPath(), JSON.stringify({ sidebar: 'yes', extra: 1 }))
-  assert.deepEqual(loadPrefs(), { sidebar: true })
+  assert.deepEqual(loadPrefs(), { sidebar: true, remoteFileWrite: null })
 
   const saved = savePrefs({ sidebar: false, extra: 'ignored' })
-  assert.deepEqual(saved, { sidebar: false })
+  assert.deepEqual(saved, { sidebar: false, remoteFileWrite: null })
+})
+
+test('the write override is tri-state and falls back to the config', () => {
+  isolatedDir()
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: false }, loadPrefs()), false)
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: true }, loadPrefs()), true)
+
+  savePrefs({ remoteFileWrite: true })
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: false }, loadPrefs()), true)
+
+  savePrefs({ remoteFileWrite: false })
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: true }, loadPrefs()), false)
+
+  savePrefs({ remoteFileWrite: null })
+  assert.equal(loadPrefs().remoteFileWrite, null)
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: true }, loadPrefs()), true)
+  assert.equal(resolveRemoteFileWrite({ remoteFileWrite: false }, loadPrefs()), false)
 })

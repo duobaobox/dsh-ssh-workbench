@@ -138,7 +138,7 @@ function makeDeps() {
       trust: (server, fingerprint) => state.trusted.push({ address: `${server.host}:${server.port}`, fingerprint }),
       revoke: () => true,
     },
-    publicConfig: () => ({ hostKeyMode: 'strict' }),
+    publicConfig: () => ({ hostKeyMode: 'strict', remoteFileWrite: state.prefs.remoteFileWrite === true }),
     prefs: {
       load: () => state.prefs,
       save: (patch) => {
@@ -217,6 +217,25 @@ test('routes read and write the sidebar preference', async () => {
   const invalid = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', { sidebar: 'no' })
   assert.equal(invalid.status, 400)
   assert.equal(state.prefs.sidebar, false)
+})
+
+test('routes expose and toggle the remote write preference', async () => {
+  const { deps, state } = makeDeps()
+  const handler = createRoutes(deps)
+
+  const opened = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', { remoteFileWrite: true })
+  assert.equal(opened.status, 200)
+  assert.equal(opened.json.prefs.remoteFileWrite, true)
+  assert.equal(opened.json.config.remoteFileWrite, true)
+  assert.equal(state.prefs.remoteFileWrite, true)
+
+  const closed = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', { remoteFileWrite: false })
+  assert.equal(closed.status, 200)
+  assert.equal(closed.json.config.remoteFileWrite, false)
+  assert.equal(state.prefs.remoteFileWrite, false)
+
+  const empty = await call(handler, 'POST', '/dsh-ssh-workbench/prefs', {})
+  assert.equal(empty.status, 400)
 })
 
 test('routes expose terminal sessions and the local workbench filesystem', async () => {

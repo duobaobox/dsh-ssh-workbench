@@ -23,7 +23,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | Windows 宿主 | Windows 上的 DSH 没有原生 `bash`（DSH 按平台禁用）：插件在两种宿主上都注册 `remote_bash` / `remote_pwsh` / `remote_exec`，所以 Windows 宿主也能操作 POSIX 目标；原生 `pwsh` 仍只作用于本机 |
 | Windows 目标 | Windows 目标经插件自有的 `remote_pwsh` 执行：命令包成 UTF-16LE 的 `-EncodedCommand` 脚本（避免引号转义），强制 UTF-8 输出并回传真实退出码；PowerShell 危险命令另有黑名单 |
 | 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
-| 远程文件工具 | `remote_read` / `remote_glob` / `remote_grep` 直接操作远程文件（显式 `server`）；`remote_write` / `remote_edit` 默认关闭，需开启 `remoteFileWrite`。原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地 |
+| 远程文件工具 | `remote_read` / `remote_glob` / `remote_grep` 直接操作远程文件（显式 `server`）；`remote_write` / `remote_edit` 默认关闭，可在插件管理的「允许远程写入」开关或 `remoteFileWrite` 配置里开启。原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地 |
 | `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不依赖也不修改任何会话目标状态。仅前台执行，长任务仍用后台工具 |
 | `remote_bash` / `remote_pwsh` | `command`、`workdir`（绝对路径 / `~/x` / 相对路径）、`timeoutMs`、取消沿用同一套语义；POSIX 目标超时后远端命令组会被终止（远端有 `timeout` 时含 `-k` 补 KILL），Windows 目标只能客户端停止等待 |
 | 结果输出 | 原生 `bash` / `pwsh` 保留 DSH 原生终端卡片；`remote_bash` / `remote_pwsh` / `remote_exec` 返回带 server / cwd / 退出码 / stdout / stderr 的文本结果 |
@@ -49,7 +49,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.0.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.1.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 1.1 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
@@ -68,7 +68,7 @@ npm run pack
 @web-1 看下磁盘和内存
 ```
 
-模型会调用 `remote_bash({ server: "web-1", command })`（Windows 目标是 `remote_pwsh`），命令实际跑在目标上。`read` / `write` / `edit` / `glob` / `grep` 仍然作用于本机；要读写远程文件，模型会改用 `remote_read` / `remote_glob` / `remote_grep`（写入需开启 `remoteFileWrite`）：
+模型会调用 `remote_bash({ server: "web-1", command })`（Windows 目标是 `remote_pwsh`），命令实际跑在目标上。`read` / `write` / `edit` / `glob` / `grep` 仍然作用于本机；要读写远程文件，模型会改用 `remote_read` / `remote_glob` / `remote_grep`（写入需在插件管理里打开「允许远程写入」）：
 
 ```
 @web-1 把 /etc/nginx/nginx.conf 里 worker_connections 改成 2048，改完 nginx -t
@@ -131,7 +131,7 @@ npm run pack
 | `maxBatchOutputBytes` | `262144` | 一次 `remote_exec` 所有任务共享的 stdout/stderr 总预算 |
 | `remoteFileReadBytes` | `262144` | `remote_read` 单次读取上限（字节） |
 | `remoteFileEditBytes` | `2097152` | `remote_write` / `remote_edit` 的文件上限（字节） |
-| `remoteFileWrite` | `false` | 是否启用 `remote_write` / `remote_edit`；默认关闭 |
+| `remoteFileWrite` | `false` | `remote_write` / `remote_edit` 的默认开关；插件管理里的「允许远程写入」可覆盖它，默认关闭 |
 | `remoteGlobMaxResults` | `200` | `remote_glob` 结果上限 |
 | `remoteGlobMaxDepth` | `4` | `remote_glob` 递归深度上限 |
 | `remoteGrepMaxResults` | `200` | `remote_grep` 结果上限 |

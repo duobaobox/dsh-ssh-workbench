@@ -1,5 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 import {
   createRemoteEditTool,
@@ -26,7 +29,15 @@ const CONFIG = {
   maxStderrBytes: 1024,
 }
 
+/** Keep the write-override prefs out of the developer's real data directory. */
+function isolatedPrefs() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-ssh-workbench-files-'))
+  process.env.DSH_SSH_WORKBENCH_DIR = dir
+  return dir
+}
+
 function makeHarness({ config = CONFIG, files = {}, execResult = null } = {}) {
+  isolatedPrefs()
   const store = new Map(Object.entries(files))
   const execCalls = []
   const activities = []
@@ -122,17 +133,37 @@ test('remote_read expands ~ and rejects relative paths', async () => {
   )
 })
 
-test('remote_write and remote_edit are disabled until remoteFileWrite is on', async () => {
+test('remote_write and remote_edit are disabled until remote writes are on', async () => {
   const h = makeHarness({ config: { ...CONFIG, remoteFileWrite: false }, files: { '/home/demo/app.log': 'a\nb\n' } })
   await assert.rejects(
     () => h.write.execute({ server: 'web-1', path: '/home/demo/app.log', content: 'x' }, h.exec),
-    /remoteFileWrite=false/,
+    /remote file writes are disabled/,
   )
   await assert.rejects(
     () => h.edit.execute({ server: 'web-1', path: '/home/demo/app.log', oldText: 'a', newText: 'x' }, h.exec),
-    /remoteFileWrite=false/,
+    /remote file writes are disabled/,
   )
   assert.equal(h.activities.length, 0)
+})
+
+test('the settings override enables writes without touching the config', async () => {
+  const h = makeHarness({ config: { ...CONFIG, remoteFileWrite: false }, files: { '/home/demo/app.log': 'a\n' } })
+  const { savePrefs } = await import('../lib/core/prefs.js')
+  savePrefs({ remoteFileWrite: true })
+  const written = await h.write.execute({ server: 'web-1', path: '/home/demo/app.log', content: 'z\n' }, h.exec)
+  assert.match(written.text, /wrote: 2 bytes/)
+  assert.equal(h.store.get('/home/demo/app.log'), 'z\n')
+})
+
+test('the settings override can also close writes the config opened', async () => {
+  const h = makeHarness({ config: { ...CONFIG, remoteFileWrite: true }, files: { '/home/demo/app.log': 'a\n' } })
+  const { savePrefs } = await import('../lib/core/prefs.js')
+  savePrefs({ remoteFileWrite: false })
+  await assert.rejects(
+    () => h.write.execute({ server: 'web-1', path: '/home/demo/app.log', content: 'z\n' }, h.exec),
+    /remote file writes are disabled/,
+  )
+  assert.equal(h.store.get('/home/demo/app.log'), 'a\n')
 })
 
 test('remote_write writes content and remote_edit enforces unique matches', async () => {

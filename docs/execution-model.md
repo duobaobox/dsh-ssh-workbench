@@ -28,7 +28,7 @@
 | 单个目标 | `remote_bash({ server, command })` |
 | 多个目标并行 | `remote_exec({ tasks: [{ server, command }] })` |
 | 本机操作 | 原生 `bash` / `pwsh` / `read` / `write` / … |
-| 远程文件 | `remote_read` / `remote_glob` / `remote_grep`（写需 `remoteFileWrite`） |
+| 远程文件 | `remote_read` / `remote_glob` / `remote_grep`（写需打开「允许远程写入」） |
 
 **每个调用的目标都写在参数里**，因此并行安全、可审计、可复现，也不存在「状态残留」。执行工具在两种宿主上都注册，避免宿主自带 shell 平台差异（Windows 宿主没有原生 `bash`）影响可用性。
 

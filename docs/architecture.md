@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.0）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.1）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -55,7 +55,7 @@ vendor/
    - 从宿主消息里提取 `@名字`，匹配服务器清单；
    - 仅记录为 @ 提示（candidates），不产生 active target；每轮注入资源清单与显式 server 工具规则，模型自行选择目标；
    - 注入一条 user-role 资源上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
-3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`，或远程文件工具 `remote_read` / `remote_glob` / `remote_grep`（写入另需 `remoteFileWrite`）。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
+3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`，或远程文件工具 `remote_read` / `remote_glob` / `remote_grep`（写入需在插件管理里打开「允许远程写入」，对应 prefs 覆盖或 `remoteFileWrite` 配置）。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
 4. DSH 审批（本插件不参与）。
 5. `ctx.tools.guard()`（`guard.js`）：从 `arguments.server`（或 `remote_exec.tasks[]` 的每个 server）解析目标，按对应方言检查黑名单 → 命中直接拒绝。`gate.js` 先把每段还原成 argv words（去引号/转义、剥 `sudo`/`timeout` 等包装、路径规范化、重定向按 token、`$()`/`eval` 递归）再匹配。
 6. 工具实现（`remote-shell-tool.js` / `remote-exec-tool.js` / `remote-file-tools.js`）：
@@ -108,7 +108,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 - `agent/pre-step`：返回 `{ kind: 'enter', messages }`，改写必须 spread。
 - `ctx.tools.guard()`：同步、单调的拒绝；在审批之后执行。
 - 原生 `bash` 输出值：`{ kind:'foreground', cwd, exitCode, signal, timedOut, aborted, timeoutMs, stdout, stderr }`。
-- 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh`、`remote_read`、`remote_glob`、`remote_grep`、`remote_write`、`remote_edit` 在两种宿主上都注册；默认只读工具可用，写工具在 `remoteFileWrite=true` 前明确拒绝。原生 `bash` / `pwsh` / `read` / `write` / `edit` / `glob` / `grep` 保持本地语义。`remote_exec` 与只读文件工具声明 `isConcurrencySafe:true`，shell 与写文件工具保持 exclusive。
+- 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh`、`remote_read`、`remote_glob`、`remote_grep`、`remote_write`、`remote_edit` 在两种宿主上都注册；默认只读工具可用，写工具在写入开关打开前明确拒绝；开关来自插件管理里的「允许远程写入」，未设置时回落到 `remoteFileWrite` 配置。原生 `bash` / `pwsh` / `read` / `write` / `edit` / `glob` / `grep` 保持本地语义。`remote_exec` 与只读文件工具声明 `isConcurrencySafe:true`，shell 与写文件工具保持 exclusive。
 
 ## @ 提示生命周期
 

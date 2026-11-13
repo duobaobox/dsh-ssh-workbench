@@ -246,6 +246,14 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   assert.deepEqual(toolViews.map((entry) => entry.options.key), [], 'v2 has no target-selector tool')
 })
 
+test('the bundle config form exposes both the sidebar and remote-write switches', () => {
+  assert.match(bundleSource, /workbench\.writeTitle/)
+  assert.match(bundleSource, /workbench\.writeHint/)
+  assert.match(bundleSource, /'data-sdh-switch': options\.key/)
+  assert.match(bundleSource, /remoteFileWrite: writeEnabled === true/)
+  assert.match(bundleSource, /Body\?\.config\?\.remoteFileWrite/)
+})
+
 test('the sidebar switch removes the workbench rail entry but keeps the rest', () => {
   const { ctx, registered } = makeClientContext()
   const exports = loadBundle({ localStorage: { 'dsh-ssh-workbench.sidebar.enabled': '0' } }).factory(makeRequire())
