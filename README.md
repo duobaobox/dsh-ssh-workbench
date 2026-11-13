@@ -52,7 +52,7 @@ npm run pack
 # 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.0.tgz
 ```
 
-发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 0.5 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
+发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 1.1 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
 
 本地开发时，也可以在 DSH 的插件管理页直接安装本目录（Bundle 安装会读取 `package.json` 的 `dsh` 字段）。
 
