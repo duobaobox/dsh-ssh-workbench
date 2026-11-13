@@ -381,3 +381,29 @@ test('the composer execution dock mirrors the usage card', () => {
   assert.match(dockSource, /target\.runningLabel/)
   assert.doesNotMatch(dockSource, /api\('\/servers'/)
 })
+
+test('the file preview renders tables, raster and svg, and admits truncation', () => {
+  // CSV/TSV are parsed into a header row plus bounded body instead of raw text.
+  assert.match(bundleSource, /const FILES_TABLE_TYPES = \{ csv: ',', tsv: '\\t' \}/)
+  assert.match(bundleSource, /function parseDelimitedTable\(source, separator\)/)
+  assert.match(bundleSource, /if \(char === '"' && cell === ''\) \{ quoted = true/)
+  assert.match(bundleSource, /function buildDelimitedTable\(source, separator\)/)
+  assert.match(bundleSource, /data-sdh-table-preview/)
+  assert.match(bundleSource, /'files\.tableMode'/)
+  assert.match(bundleSource, /'files\.tableRows'/)
+  assert.match(bundleSource, /'files\.tableTruncatedRows'/)
+  assert.match(bundleSource, /'files\.tableTruncatedColumns'/)
+  assert.match(bundleSource, /'files\.tableTruncatedBoth'/)
+  // SVG is an image type but keeps its source available, so both views exist.
+  assert.match(bundleSource, /ico: 'image\/x-icon', svg: 'image\/svg\+xml'/)
+  assert.match(bundleSource, /function decodeBase64Text\(base64\)/)
+  assert.match(bundleSource, /'files\.imageMode'/)
+  assert.match(bundleSource, /const showImage = Boolean\(imageUrl\) && !\(isTextImage && imageSource\)/)
+  // A truncated read no longer passes silently: header badge, footer hint and
+  // an honest "first N lines" counter.
+  assert.match(bundleSource, /'files\.truncated'/)
+  assert.match(bundleSource, /'files\.viewerTruncated'/)
+  assert.match(bundleSource, /'files\.linesPartial'/)
+  assert.match(bundleSource, /meta && meta\.truncated === true/)
+  assert.match(bundleSource, /const truncatedHint = meta && meta\.truncated === true/)
+})
