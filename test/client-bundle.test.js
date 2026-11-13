@@ -169,7 +169,7 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   assert.ok(slots.includes('sidebar.right.pane.tab'), 'missing sidebar.right.pane.tab body')
   assert.ok(slots.includes('sidebarRightTabs'), 'missing sidebarRightTabs registration')
   const tabs = registered.filter((entry) => entry.slot === 'sidebarRightTabs')
-  assert.deepEqual(tabs.map((entry) => entry.definition.kind).sort(), ['sdh-file', 'sdh-files', 'sdh-servers'])
+  assert.deepEqual(tabs.map((entry) => entry.definition.kind).sort(), ['sdh-file', 'sdh-files', 'sdh-servers', 'sdh-system-files'])
   const serversTab = tabs.find((entry) => entry.definition.kind === 'sdh-servers')
   assert.equal(serversTab.definition.id, 'dsh-ssh-workbench/servers')
   const filesTab = tabs.find((entry) => entry.definition.kind === 'sdh-files')
@@ -277,9 +277,14 @@ test('the bundle config form exposes the system file hierarchy switch', () => {
   assert.match(bundleSource, /'data-sdh-switch': options\.key/)
 })
 
-test('the hierarchical system files page takes over the native files kind', () => {
-  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'files'/, 'registers an extension for the native files kind')
-  assert.match(bundleSource, /kind: 'files'\s*,\s*\n\s*keepMounted: true/)
+test('the hierarchical files page is an additive tab, not a takeover', () => {
+  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'sdh-system-files'/, 'registers its own tab kind')
+  assert.match(bundleSource, /kind: 'sdh-system-files'\s*,\s*\n\s*keepMounted: true/)
+  assert.doesNotMatch(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'files'/, 'must not shadow the native files kind')
+  assert.match(bundleSource, /sidebar\.right\.tab\.files\.actions/)
+  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/hierarchy'/)
+  assert.match(bundleSource, /openHierarchyTab\(sessionId\)/)
+  assert.match(bundleSource, /openTabIn\(sessionId, 'sdh-system-files'\)/)
   assert.match(bundleSource, /lockRoot: true/)
   assert.match(bundleSource, /openNative: true/)
   assert.match(bundleSource, /dsh-resource:\/\/file\/session\/\$\{encodeURIComponent\(props\.sessionId\)\}/)
