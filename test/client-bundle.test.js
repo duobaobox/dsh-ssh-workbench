@@ -404,6 +404,10 @@ test('the file preview renders tables, raster and svg, and admits truncation', (
   assert.match(bundleSource, /'files\.truncated'/)
   assert.match(bundleSource, /'files\.viewerTruncated'/)
   assert.match(bundleSource, /'files\.linesPartial'/)
-  assert.match(bundleSource, /meta && meta\.truncated === true/)
-  assert.match(bundleSource, /const truncatedHint = meta && meta\.truncated === true/)
+  assert.match(bundleSource, /const byteTruncated = meta && meta\.truncated === true/)
+  // A clipped image payload cannot be decoded, so it says so instead of
+  // rendering a broken picture, and clipped tables count "first N rows".
+  assert.match(bundleSource, /'files\.viewerImageTruncated'/)
+  assert.match(bundleSource, /const imageTruncated = showImage && byteTruncated/)
+  assert.match(bundleSource, /'files\.tableRowsPartial'/)
 })
