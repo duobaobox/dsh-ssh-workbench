@@ -76,6 +76,12 @@ function makeClientContext() {
         },
       },
     },
+    contextMenus: {
+      register(contribution) {
+        registered.push({ slot: '@contextMenu', contribution })
+        return () => {}
+      },
+    },
   }
   const ctx = {
     get(name) {
@@ -125,6 +131,24 @@ test('client bundle registers the cordis contract', () => {
   assert.equal(exports.name, 'dsh-ssh-workbench')
   assert.deepEqual(exports.inject, ['slots', 'locale'])
   assert.equal(typeof exports.apply, 'function')
+})
+
+test('file rows reuse the official context menu instead of a private popup', () => {
+  const { ctx, registered } = makeClientContext()
+  const exports = loadBundle().factory(makeRequire())
+  exports.apply(ctx)
+  const menu = registered.find((entry) => entry.slot === '@contextMenu')
+  assert.ok(menu, 'client should register a contextMenus contribution')
+  assert.equal(menu.contribution.id, 'dsh-ssh-workbench.files')
+  assert.equal(menu.contribution.target, 'dsh-ssh-workbench.file')
+  assert.equal(typeof menu.contribution.resolve, 'function')
+  // Actions are resolved lazily and are localized at open time.
+  assert.match(bundleSource, /const FILES_MENU_TARGET = `\$\{NS\}\.file`/)
+  assert.match(bundleSource, /function resolveFilesMenuActions\(value\)/)
+  assert.match(bundleSource, /filesMenuPanels\.set\(panelIdRef\.current, menuBoxRef\.current\)/)
+  assert.match(bundleSource, /getTriggerProps\(menuTargetOf\(entry\), rowHandlers\)/)
+  assert.match(bundleSource, /renderFactorySlot\('contextMenu\.button'/)
+  assert.match(bundleSource, /id: 'delete',\s*\n\s*label: t\('files\.delete'\),\s*\n\s*danger: true/)
 })
 
 test('client apply registers settings, right-panel body and sidebar tab type', () => {

@@ -38,7 +38,8 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-context-menu"
       ]
     }
   },
@@ -48,6 +49,7 @@
     "@deepseek-ai/schemastery": "^3.18.5",
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-rc.1 <0.3.0",
     "@deepseek-ai/dsh-client-locale": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-client-ui-context-menu": ">=0.2.1-rc.1 <0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -56,6 +58,9 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-context-menu": {
       "optional": true
     }
   },
