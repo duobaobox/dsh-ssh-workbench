@@ -82,7 +82,7 @@
   "author": "duobaobox",
   "repository": {
     "type": "git",
-    "url": "https://github.com/duobaobox/dsh-ssh-workbench.git"
+    "url": "git+https://github.com/duobaobox/dsh-ssh-workbench.git"
   },
   "homepage": "https://github.com/duobaobox/dsh-ssh-workbench",
   "bugs": {
