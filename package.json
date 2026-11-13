@@ -1,7 +1,7 @@
 {
   "name": "dsh-ssh-workbench",
-  "version": "2.2.1",
-  "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；内置远程 read/glob/grep 与写开关；Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
+  "version": "1.7.0",
+  "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；显式目标的远程 shell 与 read/glob/grep，Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -23,6 +23,7 @@
     "vendor",
     "docs/quickstart.md",
     "docs/architecture.md",
+    "docs/execution-model.md",
     "docs/images"
   ],
   "dsh": {

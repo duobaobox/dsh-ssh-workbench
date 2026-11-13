@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { createRemoteShellTool, renderRemoteResult, resolveExplicitTarget } from '../lib/core/remote-bash-tool.js'
+import { createRemoteShellTool, renderRemoteResult, resolveExplicitTarget } from '../lib/core/remote-shell-tool.js'
 import { posixAdapter } from '../lib/core/shell-adapters.js'
 
 const SERVERS = [

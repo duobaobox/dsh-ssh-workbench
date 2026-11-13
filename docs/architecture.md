@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v2.2.0）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.0）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -10,13 +10,14 @@ lib/
 ├── routes.js                UI 数据面：资源管理 / 连接测试 / SFTP 文件面板 / 侧边栏偏好
 ├── client.js                Client 半片：左侧导航远程工作台、设置页、@ 引用 chip、右侧栏文件面板
 └── core/
-    ├── targets.js           每会话 @ 提示：mention 解析、去重、历史恢复（不绑定执行目标）
-    ├── server-reference.js  agent/pre-step：每轮注入资源清单与 @ 提示上下文
-    ├── remote-bash.js       POSIX 远程 shell 辅助函数：workdir、超时包装、原生值映射
-    ├── remote-bash-tool.js  显式 server 的 remote_bash / remote_pwsh 工具
+    ├── mentions.js          每会话 @ 提示：mention 解析、去重、历史恢复（不绑定执行目标）
+    ├── managed-context.js   agent/pre-step：每轮注入资源清单与 @ 提示上下文
+    ├── posix-shell.js       POSIX 远程 shell 辅助：workdir、超时包装
+    ├── remote-shell-tool.js 显式 server 的 remote_bash / remote_pwsh 工具
     ├── remote-exec-tool.js  插件自有 remote_exec：显式目标、一轮 fan-out、并发池、逐任务 guard/超时/输出
     ├── remote-file-tools.js 远程文件工具：remote_read/write/edit/glob/grep（SFTP + 方言 grep；写开关）
-    ├── target-stats.js      按 Session 聚合 activity 中的远程执行次数（composer dock）
+    ├── execution-stats.js   按 Session 聚合 activity 中的远程执行次数（composer dock）
+    ├── live-executions.js   进行中的远程调用（内存 in-flight，供 composer pill 实时显示，不参与执行）
     ├── server-ref.js        资源名/ID 解析与 requireServerRef 错误
     ├── shell-adapters.js    方言适配器入口：POSIX 适配器、按方言选择、宿主平台判断
     ├── win32-adapter.js     Windows 适配器：PowerShell -EncodedCommand、UTF-8、退出码、workdir
@@ -50,14 +51,14 @@ vendor/
 ## 一次远程工具执行的完整路径
 
 1. 用户消息进入 `agent/pre-step`。
-2. `server-reference.js`：
+2. `managed-context.js`：
    - 从宿主消息里提取 `@名字`，匹配服务器清单；
    - 仅记录为 @ 提示（candidates），不产生 active target；每轮注入资源清单与显式 server 工具规则，模型自行选择目标；
    - 注入一条 user-role 资源上下文（source kind `ssh-workbench-target`），并 spread 下游 decision。
 3. 模型选择一个远程工具并显式传 `server`：`remote_bash` / `remote_pwsh` / `remote_exec`，或远程文件工具 `remote_read` / `remote_glob` / `remote_grep`（写入另需 `remoteFileWrite`）。原生 `bash` / `pwsh` 不经过插件，始终本地执行。
 4. DSH 审批（本插件不参与）。
 5. `ctx.tools.guard()`（`guard.js`）：从 `arguments.server`（或 `remote_exec.tasks[]` 的每个 server）解析目标，按对应方言检查黑名单 → 命中直接拒绝。`gate.js` 先把每段还原成 argv words（去引号/转义、剥 `sudo`/`timeout` 等包装、路径规范化、重定向按 token、`$()`/`eval` 递归）再匹配。
-6. 工具实现（`remote-bash-tool.js` / `remote-exec-tool.js` / `remote-file-tools.js`）：
+6. 工具实现（`remote-shell-tool.js` / `remote-exec-tool.js` / `remote-file-tools.js`）：
    - `remote_bash` / `remote_pwsh` 处理 `workdir`（绝对路径 / `~` / 相对路径 → `$HOME` 前缀）；
    - 逐 server 解析方言与 `timeout` 能力（`kill`/`basic`/`none` + 登录 shell 路径；`remote_exec` 的 `probe:false` 跳过探测）；
    - 可用时把命令包成 `timeout [-k N] <秒> '<shell>' -c '<命令>'`，让客户端超时同时终止远端进程组；
@@ -65,7 +66,7 @@ vendor/
    - 返回带 server / dialect / cwd / 退出码 / stdout / stderr 的文本结果；超时/取消说明远端是否已终止。
 7. `remote_exec` 的多个 task 在同一个 assistant step 内并发执行（最多 `batchConcurrency`），结果按输入顺序渲染；`isConcurrencySafe` 让 DSH 的并行调度器可以真正重叠调用。
 
-## 多资源并行（v2.0）
+## 多资源并行
 
 `remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })` 是插件自有的 `defineTool`，不走 `tools/execute`：
 
@@ -77,21 +78,22 @@ vendor/
 - **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
 - **UI**：composer 下方 pill 是执行账本的只读投影，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。没有执行记录时不显示，因此不存在“切本地后残留”。
 
-## 多宿主与多方言（v1.5）
+## 多宿主与多方言
 
-DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、没有 `pwsh`；Windows 宿主有 `pwsh`、没有 `bash`。因此“谁是远程执行入口”由宿主与目标方言共同决定：
+DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、没有 `pwsh`；Windows 宿主有 `pwsh`、没有 `bash`。远程执行不依赖宿主自带的 shell——三种远程工具在**两种宿主上都注册**，按目标方言分派：
 
-| 宿主 \ 目标 | POSIX | Windows |
+| 目标方言 | 工具 | 执行器 |
 |---|---|---|
-| macOS/Linux | 原生 `bash`（`tools/execute` 路由，保原生卡片） | 插件自有 `remote_pwsh` |
-| Windows | 插件自有 `remote_bash` | 插件自有 `remote_pwsh` |
+| POSIX | `remote_bash` | `posixAdapter` + 可选远端 `timeout` 包装 |
+| Windows | `remote_pwsh` | `win32Adapter`（UTF-16LE `-EncodedCommand`） |
+| 混合（多目标） | `remote_exec` | 逐 task 按各自方言选适配器 |
 
 - 目标方言由连接后的探测决定（`uname -s` 成功 → posix；否则 `cmd /c ver` 成功 → windows），写入 `facts.dialect`；`platform` 字段只作探测前提示。`effectiveDialect()` 是唯一读取入口。
 - 方言决定命令构造：POSIX 用 `cd -- ... && ...` + 可选 `timeout` 包装；Windows 用 UTF-16LE base64 的 `powershell -EncodedCommand` 脚本（内含 UTF-8 输出、`Set-Location`、显式退出码），没有远端 `timeout`。
-- 目标上下文按方言/宿主生成正确的远程工具名；`remote_bash` 与 `remote_pwsh` 互相拒绝错误方言并给出改用建议。
-- `ctx.tools.guard()` 按工具名选择 POSIX 或 PowerShell 规则集。
+- `remote_bash` 与 `remote_pwsh` 互相拒绝错误方言并给出改用建议；即使 `platform` 手填错误，探测结果也会纠正。
+- `ctx.tools.guard()` 按每个显式 server 的方言选择 POSIX 或 PowerShell 规则集；facts 缺失时两套都跑。
 
-## 后台任务（v1.6）
+## 后台任务
 
 `run_in_background: true` 不再报错，而是启动一个**脱离 SSH 会话**的远端进程：
 
@@ -108,18 +110,23 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 - 原生 `bash` 输出值：`{ kind:'foreground', cwd, exitCode, signal, timedOut, aborted, timeoutMs, stdout, stderr }`。
 - 模型可见工具：`remote_exec`、`remote_bash`、`remote_pwsh`、`remote_read`、`remote_glob`、`remote_grep`、`remote_write`、`remote_edit` 在两种宿主上都注册；默认只读工具可用，写工具在 `remoteFileWrite=true` 前明确拒绝。原生 `bash` / `pwsh` / `read` / `write` / `edit` / `glob` / `grep` 保持本地语义。`remote_exec` 与只读文件工具声明 `isConcurrencySafe:true`，shell 与写文件工具保持 exclusive。
 
-## 目标状态生命周期
+## @ 提示生命周期
 
-- 存储：进程内 `Map<sessionId, {candidates, active, version, injectedVersion, notifiedVersion, seeded}>`。
-- 来源：每次工具调用的显式 `server`；人类消息里的 `@` 仅作为本轮提示。目标 Dock 是只读执行次数视图，不提供切换入口。
+- 存储：进程内 `Map<sessionId, {candidates, version, injectedVersion, seeded}>`；只有 @ 提示，没有执行绑定。
+- 来源：人类消息里的 `@名字`，由 `mentions.js` 解析并匹配清单；`managed-context.js` 每轮把它连同资源清单写进上下文。
 - 恢复：会话恢复后首次 `agent/pre-step` 用 `session.deriveMessages()` 回放历史人类消息。
 - 清理：`agent/disposed` 或插件卸载。
+
+## 执行账本
+
+- `activity.js` 记录每次远程调用（`server` / `sessionId` / `durationMs` / `outcome`），是 composer pill 的唯一数据源。
+- `execution-stats.js` 按 Session 聚合出 `{count, servers:[{name,count}]}`；`live-executions.js` 只保存进行中的调用，两者都不参与执行决策，也不写入 Session。
 
 ## 降级行为
 
 | 情况 | 行为 |
 |---|---|
-| 没有目标 | 原生工具完全本地，零开销 |
+| 没有 @ 提示 | 原生工具完全本地，零开销 |
 | `targetContext:false` | 不注入资源清单/`@` 提示；显式 server 工具仍可用 |
 | `ctx.tools.guard` 不可用（旧 DSH） | 记录 warning，黑名单关闭，其余功能不变 |
 | 目标被删除/禁用/方言不匹配 | 返回结构化错误，提示重新选择目标或改用另一种 remote 工具 |
@@ -128,7 +135,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 | host facts 采集失败 | 只影响 UI/上下文摘要，不影响执行；下次测试/选中目标时重试 |
 | SFTP 分块卡死 | `transferChunkTimeoutMs` 到点关闭会话并报 `SFTP_TIMEOUT`，UI 可从 offset 续传 |
 | 远程 home 解析失败 | `/sftp/home` 返回可读错误，工作台文件面板回退到 `/` |
-| 多个 `@` 未指定目标 | 模型按资源清单选择，或直接发 `remote_exec` 并行；没有 active target 可切换，不会静默跑本地 |
+| 多个 `@` | 模型按资源清单选择目标，或直接发 `remote_exec` 并行；没有可切换的 active target，不会静默跑本地 |
 | 服务器清单损坏 | 路由返回错误结果，不影响本地工具 |
 
 ## 安全边界

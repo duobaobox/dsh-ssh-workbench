@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { summarizeExecution } from '../lib/core/target-stats.js'
+import { summarizeExecution } from '../lib/core/execution-stats.js'
 
 function entry(overrides) {
   return {

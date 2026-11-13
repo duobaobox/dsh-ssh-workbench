@@ -9,7 +9,7 @@ import {
   quotePowerShell,
   win32Adapter,
 } from '../lib/core/win32-adapter.js'
-import { createRemoteShellTool } from '../lib/core/remote-bash-tool.js'
+import { createRemoteShellTool } from '../lib/core/remote-shell-tool.js'
 import { posixAdapter } from '../lib/core/shell-adapters.js'
 
 const CONFIG = {

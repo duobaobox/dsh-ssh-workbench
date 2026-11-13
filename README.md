@@ -4,7 +4,7 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 
 不是又一个 SSH 客户端：它把远程执行接进 DSH 的对话与审批，把终端、SFTP 文件管理和本地文件放在同一个工作台里；安装包自包含、开箱即用。
 
-插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。v2 起**所有远程执行都显式带目标**：原生 `bash` / `pwsh` 只在本机生效；对话里 `@资源名` 只是告诉模型“这轮可能用哪台”，模型实际调用 `remote_bash({ server, command })`、`remote_pwsh({ server, command })`、`remote_exec({ tasks })`，必要时用 `remote_read` / `remote_glob` / `remote_grep` 查远程文件。没有会话级 active target，也没有“切回本地”的状态残留：多轮对话里目标不会静默漂移。另外保留一道**危险命令黑名单**作为兜底。
+插件不改 DSH 的本地工具语义；左侧导航提供一个独立的「远程工作台」，把终端与文件管理放在一起（本地和远程都能用）。**所有远程执行都显式带目标**：原生 `bash` / `pwsh` 只在本机生效；对话里 `@资源名` 只是告诉模型“这轮可能用哪台”，模型实际调用 `remote_bash({ server, command })`、`remote_pwsh({ server, command })`、`remote_exec({ tasks })`，必要时用 `remote_read` / `remote_glob` / `remote_grep` 查远程文件。没有会话级 active target，也没有“切回本地”的状态残留：多轮对话里目标不会静默漂移。另外保留一道**危险命令黑名单**作为兜底。
 
 - 适用：DSH 0.2.1-rc.1 ～ 0.2.x（`engines.dsh: >=0.2.1-rc.1 <0.3.0`）
 - 平台：macOS / Linux / Windows 上的 DSH；远程目标支持 POSIX 与 Windows（PowerShell）
@@ -49,7 +49,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-2.2.1.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.0.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 0.5 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
@@ -107,7 +107,7 @@ npm run pack
 - **stdin 恒为 EOF**：远程命令的 stdin 在启动后立即关闭（等价 `</dev/null`），`cat`/`read` 等读 stdin 的命令会直接得到 EOF。
 - **文件工具分本地/远程**：原生 `read`/`write`/`edit`/`glob`/`grep` 只作用于本地；远程文件用显式的 `remote_read`/`remote_glob`/`remote_grep`，写入用 `remote_write`/`remote_edit`（默认关闭）。远程写入不是原子操作，修改配置前请备份；大文件/二进制仍建议走右侧栏 SFTP 面板。
 - **并发由 DSH 调度**：`remote_exec` 显式声明并行安全，因此一次批量任务会真正并发（受 `batchConcurrency` 上限约束）；原生 `bash` 与 `remote_bash` / `remote_pwsh` 仍是 exclusive 工具，同一轮里的多个 shell 调用按 DSH 调度串行。插件为单台服务器提供最多 6 条并发通道。
-- **目标标识**：DSH 的 bash 卡片是官方渲染且没有装饰插槽，插件不替换卡片；当前用“切换后首条命令 stderr 行 + cwd 前缀（`web-1:/var/log`）+ composer 下方参数行目标指示”标出目标。
+- **目标标识**：DSH 的工具卡片是官方渲染且没有装饰插槽，插件不替换卡片；远程调用的目标由工具参数（`server`）与结果里的 `target` / `cwd` 行体现，composer 下方的 pill 另提供本会话执行次数与执行中的实时目标。
 - **侧边栏开关**：开关存放在 `~/.dsh/ssh-workbench/prefs.json`，在插件管理里保存后当前窗口立即生效；关闭时左侧导航不再出现远程工作台入口，右侧栏的「远程工作台」「远程文件」页签保持不变。
 - **终端生命周期**：终端会话跟随工作台页面/页签，关闭页签或离开工作台会结束会话；页面刷新/关闭时通过 `sendBeacon` 尽力补发关闭，但进程崩溃或 Host 异常退出后仍依赖 30 分钟空闲回收（尚未做跨页面保活或重连恢复）。本地终端依赖 Host 的 PTY 服务，不可用时给出提示。
 - **本地文件边界**：工作台的本地文件面板与本地终端默认以**本地用户主目录**为根（`$HOME`，与常规 SSH 客户端的「本地」面板一致，面包屑显示真实路径），越界路径与指向外部的符号链接都会被拒绝；需要固定其他目录时用 `localRoot` 配置（绝对路径或 `~/...`），需要操作主目录以外的本地路径时用本地终端。远程文件仍走 SFTP，远程文件面板默认打开登录 home。
@@ -167,7 +167,7 @@ npm run test:ssh:sftp # SFTP 集成（进程内 ssh2.Server）
 npm run pack         # 打包到 dist/
 ```
 
-更多文档：[快速上手](docs/quickstart.md) · [架构说明](docs/architecture.md) · [贡献指南](CONTRIBUTING.md) · [安全说明](SECURITY.md) · [更新日志](CHANGELOG.md)。
+更多文档：[快速上手](docs/quickstart.md) · [执行模型](docs/execution-model.md) · [架构说明](docs/architecture.md) · [贡献指南](CONTRIBUTING.md) · [安全说明](SECURITY.md) · [更新日志](CHANGELOG.md)。
 
 ## 参与贡献
 

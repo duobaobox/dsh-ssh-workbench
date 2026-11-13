@@ -4,126 +4,53 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
-## [2.2.0] - 2026-11-11
+## [1.7.0] - 2026-11-13
 
-### 实时远程目标指示
-
-- composer 下方的执行 pill 现在会在远程调用进行中显示实时目标：单目标显示 `host165 · 执行中`，多目标显示 `2 个目标 · 执行中`；调用结束后回退为本会话执行次数。
-- 通过 around-dispatch 的 `tools/execute` 钩子维护内存中的 in-flight 记录，覆盖 `remote_bash`、`remote_pwsh`、`remote_exec` 以及新增的 `remote_read`/`remote_write`/`remote_edit`/`remote_glob`/`remote_grep`；不恢复 active target，不改变任何工具的执行语义。
-- `/target` 新增 `running` 字段；Dock 轮询从 10 秒降到 1.5 秒，执行中即使尚无完成记录也会显示。
-- 测试 222/222；版本 2.2.0。
-
-## [2.2.1] - 2026-11-11
-
-### 空闲 pill 显示计数单位
-
-- 没有远程任务执行时，底部 pill 从 `远程执行 · N` 改成 `远程执行 · N 次`，避免只有数字不知道含义。
-- 英文文案同步为 `Remote · N runs`；执行中状态仍显示目标名/目标数量 + `执行中`。
-- 测试 223/223；版本 2.2.1。
-
-## [2.1.0] - 2026-11-11
-
-### 远程文件工具
-
-- 新增 `remote_read`、`remote_glob`、`remote_grep`：面向运维应急的远程文件读取/查找/搜索，全部显式 `server`，通过 SFTP（read/glob）或目标方言命令（grep）执行，并受结果/输出上限约束。
-- 新增 `remote_write`、`remote_edit`：默认关闭，需在配置中显式设置 `remoteFileWrite: true`；`remote_edit` 默认要求 oldText 唯一匹配，可用 `replaceAll: true` 覆盖。
-- 每轮上下文会列出远程文件工具与写开关状态；原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地。
-- 新增配置：`remoteFileReadBytes`（262144）、`remoteFileEditBytes`（2097152）、`remoteFileWrite`（false）、`remoteGlobMaxResults`（200）、`remoteGlobMaxDepth`（4）、`remoteGrepMaxResults`（200）。
-- 远程文件操作会记录到执行活动；`remote_write`/`remote_edit` 非原子，修改关键文件前请先备份。
-- 测试 218/218；版本 2.1.0。
-
-## [2.0.0] - 2026-11-10
+以 1.6.4 为基线的一个中版本：远程执行改为「每次调用显式带目标」，并补齐远程文件工具、多资源并行与执行指示。
 
 ### 执行模型：每个远程调用显式带目标
 
 - 移除会话级 active target、`ssh_workbench_target` 工具和原生 `bash` 的远程拦截。原生 `bash` / `pwsh` 现在始终只在本机运行；远程工作只有一条路：显式指定 `server`。
 - 工具矩阵统一为 `remote_bash({ server, command })`（POSIX 目标）、`remote_pwsh({ server, command })`（Windows 目标）、`remote_exec({ tasks: [{ server, command }] })`（多目标并行）；两种宿主都注册全部远程工具。
-- `@资源名` 不再改变执行状态，只作为本轮目标提示进入上下文；后续无 `@` 的追问不会把命令静默带走。切回本机不需要任何“切换目标”动作。
+- `@资源名` 不再改变执行状态，只作为本轮目标提示进入上下文；后续无 `@` 的追问不会把命令静默带走。切回本机不需要任何「切换目标」动作。
 - 每轮上下文始终注入纳管资源清单（名称 / 平台 / 状态）与显式 server 工具规则；无 `@` 时模型也能直接选目标，并明确禁止读取 `servers.json` 猜配置。
 - 删除旧的 `TARGET_NOT_SELECTED`、target store replay/POST `/target`、native bash router 及其测试。
+
+### 远程文件工具
+
+- 新增 `remote_read`、`remote_glob`、`remote_grep`：远程文件读取/查找/搜索，全部显式 `server`，通过 SFTP（read/glob）或目标方言命令（grep）执行，并受结果/输出上限约束。
+- 新增 `remote_write`、`remote_edit`：默认关闭，需在配置中显式设置 `remoteFileWrite: true`；`remote_edit` 默认要求 oldText 唯一匹配，可用 `replaceAll: true` 覆盖。
+- 原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地；远程文件能力是显式的 `remote_*` 工具，不做 SSHFS 或透明重定向。
+- 新增配置：`remoteFileReadBytes`（262144）、`remoteFileEditBytes`（2097152）、`remoteFileWrite`（false）、`remoteGlobMaxResults`（200）、`remoteGlobMaxDepth`（4）、`remoteGrepMaxResults`（200）。
+
+### 多资源并行
+
+- `remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })` 一次调用跨多台服务器并行采集；不读取也不改变任何会话目标状态。
+- 全量预检后再执行：任一 task 的目标/命令/目录/超时非法时整批拒绝，不会执行一半；单任务失败、传输错误或超时只影响该任务，结果按输入顺序返回。
+- 声明 `isConcurrencySafe: true`，由 DSH 工具批处理调度并行；工具内部再按 `batchConcurrency`（默认 4，上限 8）跨服务器并发，并受单连接 `maxChannelsPerServer` 约束。
+- 配置新增 `maxBatchTasks`、`batchConcurrency`、`maxBatchOutputBytes`；输出预算按任务均分，避免一次 fan-out 撑爆上下文。
 
 ### 状态查询性能
 
 - `remote_exec` 新增 `probe:false`：跳过方言探测和 `timeoutGuard` 能力探测，直接用 `facts.dialect` / 记录平台判断。
 - 新增 `connectTimeoutMs`：按调用限制 SSH 建连时间，一路透传到 broker 的 `readyTimeout`；状态类批量查询可用 `probe:false + connectTimeoutMs: 4000`，避免不可达目标拖满 15–30 秒。
-- 每个 task 的报告包含 dialect、duration、stdout/stderr 截断与错误；不可达目标不再阻塞其他任务。
 
-### Dock 与统计
+### 执行指示（composer pill）
 
-- composer 下方 pill 改为执行账本的只读投影，结构对齐 DSH Token 用量卡：标题 + 总次数、分隔线、目标名 → 次数；不显示成功/失败、用时或模型指标，不承担切换/打开工作台。
-- 没有执行记录时不显示；不依赖 active/candidates，不再有“切本地后残留”。
+- 底部 pill 是执行账本的只读投影，结构对齐 DSH Token 用量卡：标题「远程执行」+ 总次数、分隔线、目标名 → 次数；不显示成功/失败或用时，不承担切换目标或打开工作台。
+- 远程调用进行中显示实时目标：单目标 `host165 · 执行中`，多目标 `2 个目标 · 执行中`；结束后回退为本会话次数（`远程执行 · N 次`）。1.5 秒轮询。
+- 通过 around-dispatch 的 `tools/execute` 钩子维护内存 in-flight 记录，覆盖全部 `remote_*` 工具；不恢复 active target，不改变执行语义。
 
-### 安全与测试
+### 安全
 
 - 黑名单 guard 从工具参数解析显式 `server`；`remote_exec` 逐 task 校验，任一 task 命中则整批拒绝；方言事实缺失时同时跑 POSIX 与 PowerShell 规则。
-- 测试重写为显式目标模型，211/211 通过；新增 `probe:false` / `connectTimeoutMs` / 资源清单上下文 / TargetDock 结构断言。
+- 原生 `bash` / `pwsh` 是本地工具，不再经过远程黑名单。
 
-## [1.7.6] - 2026-11-10
+### 整理
 
-### 目标 pill 优先显示当前 shell 目标
-
-- 多 @ 之后再选定单个 target，pill 现在显示该 target 名称，不再停留在「N 个目标」。
-- 只有在多个候选且尚未选定 shell 目标时，pill 才显示聚合数量；卡片仍列出当前候选与 active 的执行次数。
-- 切回 `local` 时仍隐藏；补目标 pill 状态测试，236/236 通过。
-
-## [1.7.5] - 2026-11-10
-
-### 目标 Dock 跟随远程上下文显示
-
-- 修复切回本地后底部“远程执行”卡仍常驻：可见性现在只由本会话 active target 和 @ 候选决定，历史统计不再参与。
-- `ssh_workbench_target({ server: "local" })` 清空 active/candidates 后，dock 随之隐藏；重新 @ 或选中远程目标后恢复。
-- 测试：236/236 通过。
-
-## [1.7.4] - 2026-11-10
-
-### 目标 Dock 弹层改用 body portal
-
-- 修复部分窗口里点击目标 pill 看起来无反应：弹层改为 `react-dom.createPortal` 挂到 `document.body`，避开 composer 的 stacking context 与 overflow 裁剪；外部点击判断同时检查 `rootRef` 和 `panelRef`。
-- 位置仍按 pill 的 rect 计算并固定在视口右下锚点；点击外部、Escape 或再次点击 pill 都会关闭。
-- 测试：236/236 通过（新增 portal 与 panelRef 结构断言）。
-
-## [1.7.3] - 2026-11-10
-
-### 目标 Dock：对齐 Token 用量弹窗的只读精简卡
-
-- 直接采用 DSH 内置 Token 用量弹窗的视觉结构：标题行（图标 + 「远程执行」+ 右侧总次数）、0.5px 分隔线、label / value 明细网格。
-- 明细只保留本 Session 的目标名与工具执行次数；删除目标选中/切换、Windows 徽章、成功/失败、总用时/平均/最近、插件统计提示与「打开工作台」按钮。
-- `GET /target` 仍返回聚合后的 `stats` 供前端计数；Dock 不再发起 `POST /target`，active 只由 `ssh_workbench_target` 或 `@` 资源决定。
-- 测试：236/236 通过（更新 TargetDock 结构与样式断言）。
-
-## [1.7.2] - 2026-11-10
-
-### 目标 Dock 简化为只读执行统计
-
-- 去掉目标行的 active 勾选与点击切换语义，去掉「打开工作台」按钮；单/多目标都只展示本 Session 的执行统计，不再承担目标选择入口。
-- 卡片改为 Token 用量卡式的紧凑布局：标题「远程执行」+ 总次数、按目标列出次数/用时、成功/失败一行、总用时/平均/最近一行；保留 Windows 例外徽章，去掉 Linux 标签。
-- 移除 `POST /target` 路由及其测试；切换 active 仍通过 `ssh_workbench_target` 或 `@` 资源完成，TargetDock 不改变执行状态。
-- 文档同步：README、quickstart、architecture 不再描述目标行切换或打开工作台按钮。
-- 测试：236/236 通过（移除 1 个 POST 路由测试，新增只读结构断言）。
-
-## [1.7.1] - 2026-11-10
-
-### 目标 Dock：执行统计与统一卡片
-
-- composer 下方目标 Dock 改为单/多目标共用的一张锚定卡片：目标行显示名称、active 标记、Windows 例外徽章，以及该目标在本 Session 的执行次数/用时；卡片下方显示本 Session 的远程执行统计（次数、成功、失败、总用时、平均、最近一次）。
-- 统计来自插件的本地 activity 记录：新增 `sessionId`/`durationMs` 字段，`remote_exec` 的每个 task、`remote_bash`/`remote_pwsh` 与原生 bash 路由都会记录；`GET/POST /target` 返回按 Session 聚合的 `stats`。不读取也不伪造 DSH 的模型用时/TTFT/TPS。
-- 去掉底部 Dock 的 `Linux` 标签（原来所有非 Windows 目标都会被标成 Linux）；仅 Windows 目标保留小徽章，资源设置页仍保留平台字段。
-- 多目标点行只切换 active target，底部「打开工作台」进入终端/文件；单目标也先打开统计卡片，不再直接跳转。
-- 测试：237/237 通过（新增 target-stats、activity session/duration、/target stats 与 Dock 结构断言）。
-
-## [1.7.0] - 2026-11-10
-
-### 多资源并行执行与目标 Dock
-
-- 新增模型工具 `remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })`：每个 task 显式指定目标，一次调用可跨多台服务器并行采集；不读取也不改变会话的 active target。
-- 全量预检后再执行：任一 task 的目标/命令/目录/超时非法时整批拒绝，不会执行一半；单任务失败、传输错误或超时只影响该任务，结果按输入顺序返回。
-- `remote_exec` 声明 `isConcurrencySafe: true`，由 DSH 工具批处理调度并行；工具内部再按 `batchConcurrency`（默认 4，上限 8）跨服务器并发，并受单连接 `maxChannelsPerServer` 约束。
-- 安全：guard 对 `remote_exec.tasks[]` 逐条按目标方言检查；目标 `facts.dialect` 缺失时同时跑 POSIX 与 PowerShell 两套规则，避免记录 platform 过期导致绕过。批量仅前台，禁止 `server: "local"`。
-- 配置新增 `maxBatchTasks`、`batchConcurrency`、`maxBatchOutputBytes`；输出预算按任务均分，避免一次 fan-out 撑爆上下文。
-- `POST /target` 允许 UI 切换 active target（只影响 UI/上下文，不碰执行通道）。
-- composer 目标 Dock：单目标显示资源名并可点击打开工作台；多候选显示「N 个目标」聚合 pill，点开菜单查看目标/平台并切换，active 只在菜单行高亮，避免 target 切换时文字跳动。
-- 目标上下文与快速上手改为优先引导 `remote_exec`；直接调用 shell 工具且多 @ 未选目标时仍返回 `TARGET_NOT_SELECTED`。
-- 测试：232/232 通过（新增 remote_exec、guard batch、POST /target、TargetDock 结构断言）。
+- 模块按当前职责重命名：`mentions.js`（@ 提示）、`posix-shell.js`（POSIX 命令构造）、`remote-shell-tool.js`（远程 shell 工具）、`managed-context.js`（每轮上下文注入）、`execution-stats.js`（执行统计）。
+- 删除遗留死代码与过时注释，统一文档与代码中的执行模型表述。
+- 测试 220/220，SSH/SFTP 集成测试通过。
 
 ## [1.6.4] - 2026-11-09
 

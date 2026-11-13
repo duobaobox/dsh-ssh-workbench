@@ -18,12 +18,13 @@ npm run pack                # 生成 dist/dsh-ssh-workbench-<version>.tgz
 ## 目录结构
 
 ```
-lib/index.js        host 半：插件入口、Config、工具注册（ssh_workbench_target / remote_bash / remote_pwsh）
+lib/index.js        host 半：插件入口、Config、工具注册（remote_bash / remote_pwsh / remote_exec / remote_* 文件工具）
 lib/routes.js       UI 数据面：资源、凭据、连接测试、SFTP、终端、偏好
 lib/client.js       client 半：工作台、设置页、侧栏面板、工具卡片、i18n
-lib/core/           传输与领域模块：broker/ssh/dialect/shell-adapters/remote-bash(-tool)/
-                    background/win32-adapter/gate(-pwsh)/guard/targets/server-reference/
-                    store/secrets/known-hosts/activity/terminals/localfs/routes 支撑模块
+lib/core/           传输与领域模块：broker/ssh/dialect/shell-adapters/posix-shell/
+                    remote-shell-tool/remote-exec-tool/remote-file-tools/managed-context/
+                    mentions/execution-stats/live-executions/background/win32-adapter/
+                    gate(-pwsh)/guard/store/secrets/known-hosts/activity/terminals/localfs
 test/               单元测试、集成测试、基准脚本、真机回归脚本
 docs/               用户文档（docs/quickstart.md、docs/architecture.md）
 vendor/             随包携带的纯 JS 依赖（ssh2 及 xterm 构建输入）；版本/许可证见 vendor/NOTICE.md

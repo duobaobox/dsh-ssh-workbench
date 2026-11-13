@@ -6,8 +6,8 @@ import {
   buildManagedContextMessage,
   installManagedContext,
   renderManagedContext,
-} from '../lib/core/server-reference.js'
-import { createTargetStore } from '../lib/core/targets.js'
+} from '../lib/core/managed-context.js'
+import { createTargetStore } from '../lib/core/mentions.js'
 
 const SERVERS = [
   { id: 'srv_1', name: 'web-1', host: '192.0.2.10', port: 22, username: 'root', platform: 'posix', enabled: true },

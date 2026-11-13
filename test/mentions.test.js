@@ -9,7 +9,7 @@ import {
   findTarget,
   lastHumanMessage,
   replayTargets,
-} from '../lib/core/targets.js'
+} from '../lib/core/mentions.js'
 
 const SERVERS = [
   { id: 'srv_1', name: 'web-1', host: '192.0.2.10', port: 22, username: 'root', platform: 'posix', enabled: true },
