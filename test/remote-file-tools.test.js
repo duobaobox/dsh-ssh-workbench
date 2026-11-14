@@ -40,6 +40,7 @@ function makeHarness({ config = CONFIG, files = {}, execResult = null } = {}) {
   isolatedPrefs()
   const store = new Map(Object.entries(files))
   const execCalls = []
+  const chmodCalls = []
   const activities = []
   const runtime = {
     async sftpHome() {
@@ -61,6 +62,25 @@ function makeHarness({ config = CONFIG, files = {}, execResult = null } = {}) {
     async sftpWrite(_server, path, content) {
       store.set(path, content)
       return { path, bytes: Buffer.byteLength(content) }
+    },
+    async sftpLstat(_server, path) {
+      if (path === '/home/demo/link') return { path, size: 0, mode: 0o120777, type: 'link' }
+      if (!store.has(path)) throw new Error(`ENOENT: ${path}`)
+      return { path, size: Buffer.byteLength(store.get(path)), mode: 0o100644 }
+    },
+    async sftpChmod(_server, path, mode) {
+      chmodCalls.push({ path, mode })
+      return { path, mode }
+    },
+    async sftpRename(_server, from, to) {
+      if (!store.has(from)) throw new Error(`ENOENT: ${from}`)
+      store.set(to, store.get(from))
+      store.delete(from)
+      return { from, to }
+    },
+    async sftpRemove(_server, path) {
+      store.delete(path)
+      return { path }
     },
     async sftpStat(_server, path) {
       if (store.has(path)) return { path, size: Buffer.byteLength(store.get(path)) }
@@ -106,6 +126,7 @@ function makeHarness({ config = CONFIG, files = {}, execResult = null } = {}) {
     store,
     execCalls,
     activities,
+    chmodCalls,
     exec: { agent: { session: { id: 's1' } }, signal: { aborted: false } },
   }
 }
@@ -203,4 +224,25 @@ test('remote_grep uses grep on POSIX and Select-String on Windows', async () => 
   const w = await windows.grep.execute({ server: 'winbox', pattern: 'listen', path: '/home/demo/app.log' }, windows.exec)
   assert.match(w.text, /listen 80/)
   assert.match(windows.execCalls[0].command, /powershell\.exe .*EncodedCommand/)
+})
+
+test('remote_write replaces a POSIX file atomically and keeps its mode', async () => {
+  const h = makeHarness({ files: { '/home/demo/app.log': 'old\n' } })
+  const result = await h.write.execute({ server: 'web-1', path: '/home/demo/app.log', content: 'new\n' }, h.exec)
+  assert.match(result.text, /wrote: 4 bytes \(atomic replace\)/)
+  assert.equal(h.store.get('/home/demo/app.log'), 'new\n')
+  assert.equal(
+    [...h.store.keys()].some((key) => key.includes('.sdh-tmp-')),
+    false,
+  )
+  assert.equal(h.chmodCalls.length, 1)
+  assert.equal(h.chmodCalls[0].mode, 0o644)
+})
+
+test('remote_write writes through a symlink instead of replacing it', async () => {
+  const h = makeHarness({ files: { '/home/demo/app.log': 'old\n' } })
+  const result = await h.write.execute({ server: 'web-1', path: '/home/demo/link', content: 'new\n' }, h.exec)
+  assert.match(result.text, /\(written through symlink\)/)
+  assert.equal(h.store.get('/home/demo/link'), 'new\n')
+  assert.equal(h.chmodCalls.length, 0)
 })

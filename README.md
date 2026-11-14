@@ -24,10 +24,10 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 | Windows 目标 | Windows 目标经插件自有的 `remote_pwsh` 执行：命令包成 UTF-16LE 的 `-EncodedCommand` 脚本（避免引号转义），强制 UTF-8 输出并回传真实退出码；PowerShell 危险命令另有黑名单 |
 | 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
 | 远程文件工具 | `remote_read` / `remote_glob` / `remote_grep` 直接操作远程文件（显式 `server`）；`remote_write` / `remote_edit` 默认关闭，可在插件管理的「允许远程写入」开关或 `remoteFileWrite` 配置里开启。原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地 |
-| `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不依赖也不修改任何会话目标状态。仅前台执行，长任务仍用后台工具 |
+| `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs?, run_in_background? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不依赖也不修改任何会话目标状态。任务可单独立 `run_in_background`，返回远端 pid 与日志 |
 | `remote_bash` / `remote_pwsh` | `command`、`workdir`（绝对路径 / `~/x` / 相对路径）、`timeoutMs`、取消沿用同一套语义；POSIX 目标超时后远端命令组会被终止（远端有 `timeout` 时含 `-k` 补 KILL），Windows 目标只能客户端停止等待 |
 | 结果输出 | 原生 `bash` / `pwsh` 保留 DSH 原生终端卡片；`remote_bash` / `remote_pwsh` / `remote_exec` 返回带 server / cwd / 退出码 / stdout / stderr 的文本结果 |
-| 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `/tmp` 日志，Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
+| 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `~/.dsh/ssh-workbench/logs`（`DSH_SSH_WORKBENCH_LOG_DIR` 可覆盖，不可写时回退 `/tmp`），Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
 | 平台徽标 | 资源列表/设置页显示 **Linux / Windows** 徽标（来自连接后探测的 `facts.dialect`，不是手填字段）；连接测试结果也显示探测到的平台 |
 | 执行统计 | composer 下方的 pill 只读展示本会话的远程执行次数，结构对齐 DSH Token 用量弹窗：标题「远程执行」+ 总次数、分隔线、目标名 → 次数；没有执行时不显示。执行中 pill 会实时显示当前目标（单目标为 `host165 · 执行中`，多目标为 `2 个目标 · 执行中`），1.5 秒轮询；它不切换目标、不打开工作台，也不显示成功/失败或用时 |
 | 远程工作台 | 左侧导航的独立页面：左侧终端（本地终端 / 远程 SSH 终端），右侧文件管理（本地用户主目录 / 远程 SFTP，远程默认打开登录 home），文件可**在工作台内直接预览**，拖动分隔条调整宽度；每个页签一个终端会话，仅活动页签轮询、非活动页签暂停并在切回时续读（UI 能力，不占模型工具） |
@@ -50,7 +50,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.7.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.8.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 1.1 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。
@@ -102,11 +102,12 @@ npm run pack
 
 - **stdout/stderr 顺序**：两者是独立管道，收集后分开返回（与原生 bash 的值契约一致），交错顺序会丢失；看 `make`/`pip install` 这类日志时需要留意。
 - **Windows 本地路径**：工作台本地文件面板已按 Windows 分隔符处理面包屑与文件名；极少数外部工具生成的混合分隔符路径仍可能显示成一段，可在路径编辑框直接输入绝对路径。
-- **`remote_exec` 仅前台**：不支持 `run_in_background`；一次最多 8 个 task、默认并发 4，所有结果共享 `maxBatchOutputBytes` 预算，超出会按任务截断。长时间任务仍应分别用后台工具或终端。
-- **后台任务**：`run_in_background` 返回的是远端 pid + 日志，不是 DSH 本地 job id；`timeoutMs` 和取消只影响启动调用，不作用于已脱离的进程。POSIX 的 `/tmp` 日志可能被系统清理（按 tmp 策略），重要输出请自行重定向到持久目录。
+- **`remote_exec` 批量规则**：一次最多 8 个 task、默认并发 4，所有结果共享 `maxBatchOutputBytes` 预算，超出会按任务截断；每个 task 都可以单独设置 `run_in_background`。
+- **后台任务**：`run_in_background` 返回的是远端 pid + 日志，不是 DSH 本地 job id；`timeoutMs` 和取消只影响启动调用，不作用于已脱离的进程。POSIX 日志默认写在 `~/.dsh/ssh-workbench/logs`（可用 `DSH_SSH_WORKBENCH_LOG_DIR` 覆盖），只有该目录不可写时才回退 `/tmp`。
 - **超时终止**：远端有 `timeout` 时，超时会连同远端进程组一起终止（支持 `-k` 时再补一次 KILL，缓冲时间可用 `timeoutKillAfterMs` 调整）；远端没有 `timeout` 时只能停止等待，stderr 会提示"命令可能仍在运行"。**取消（Esc）不会立刻杀远端**：通道关闭后远端仍会计时到自己的 deadline。
 - **stdin 恒为 EOF**：远程命令的 stdin 在启动后立即关闭（等价 `</dev/null`），`cat`/`read` 等读 stdin 的命令会直接得到 EOF。
-- **文件工具分本地/远程**：原生 `read`/`write`/`edit`/`glob`/`grep` 只作用于本地；远程文件用显式的 `remote_read`/`remote_glob`/`remote_grep`，写入用 `remote_write`/`remote_edit`（默认关闭）。远程写入不是原子操作，修改配置前请备份；大文件/二进制仍建议走右侧栏 SFTP 面板。
+- **文件工具分本地/远程**：原生 `read`/`write`/`edit`/`glob`/`grep` 只作用于本地；远程文件用显式的 `remote_read`/`remote_glob`/`remote_grep`，写入用 `remote_write`/`remote_edit`（默认关闭）。POSIX 目标的远程写入会先写同目录临时文件再 `rename` 原子替换，并尽量保留原权限位；Windows 目标没有可靠的覆盖 rename，仍为直接写入；软链目标会写穿链接而不是替换链接。修改配置前仍建议备份；大文件/二进制仍建议走右侧栏 SFTP 面板。
+- **composer pill 与后台任务**：pill 只在工具调用开始/结束时更新；`run_in_background` 的进程在工具返回后继续运行，pill 不会保持“执行中”，这不代表远端进程已结束。
 - **并发由 DSH 调度**：`remote_exec` 显式声明并行安全，因此一次批量任务会真正并发（受 `batchConcurrency` 上限约束）；原生 `bash` 与 `remote_bash` / `remote_pwsh` 仍是 exclusive 工具，同一轮里的多个 shell 调用按 DSH 调度串行。插件为单台服务器提供最多 6 条并发通道。
 - **目标标识**：DSH 的工具卡片是官方渲染且没有装饰插槽，插件不替换卡片；远程调用的目标由工具参数（`server`）与结果里的 `target` / `cwd` 行体现，composer 下方的 pill 另提供本会话执行次数与执行中的实时目标。
 - **侧边栏开关**：开关存放在 `~/.dsh/ssh-workbench/prefs.json`，在插件管理里保存后当前窗口立即生效；关闭时左侧导航不再出现远程工作台入口，右侧栏的「远程工作台」「远程文件」页签保持不变。

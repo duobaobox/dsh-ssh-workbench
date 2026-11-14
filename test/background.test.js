@@ -22,7 +22,9 @@ test('parseBackgroundStart reports a launcher that failed before starting', () =
 test('buildPosixBackgroundCommand detaches through sh -c + nohup and prints markers', () => {
   const command = buildPosixBackgroundCommand("cd -- '/srv/app' && npm run dev")
   assert.match(command, /^sh -c '/)
-  assert.match(command, /mktemp \/tmp\/dsh-ssh-workbench-bg/)
+  assert.match(command, /LOG_DIR=\$\{DSH_SSH_WORKBENCH_LOG_DIR:-\$HOME\/\.dsh\/ssh-workbench\/logs\}/)
+  assert.match(command, /mkdir -p "\$LOG_DIR" 2>\/dev\/null \|\| LOG_DIR=\/tmp/)
+  assert.match(command, /mktemp "\$LOG_DIR\/dsh-ssh-workbench-bg\.XXXXXX"/)
   assert.match(command, /nohup "\$\{SHELL:-\/bin\/sh\}" -lc/)
   assert.match(command, /__SDH_BG_PID__\$!/)
   assert.match(command, /__SDH_BG_LOG__\$LOG/)

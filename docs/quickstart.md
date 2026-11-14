@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.7.7.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-1.7.8.tgz`。安装后重启/重载插件。
 
 插件管理 → 远程工作台里可以打开「系统文件浏览使用层级模式」：右侧栏「工作区文件」会换成插件的层级浏览器，范围仅限当前会话目录；默认关闭。
 
@@ -70,7 +70,7 @@ composer 下方的 pill 只读展示本会话各目标的远程执行次数，�
 ## 6. 常见问题
 
 **远程文件怎么读写？**
-原生 `read` / `write` / `edit` / `glob` / `grep` 始终作用于 DSH 主机；远程文件请让模型使用显式的远程文件工具：`remote_read`、`remote_glob`、`remote_grep`。写入默认关闭：在「插件 → 远程工作台 → 允许远程写入」打开开关（或设置 `remoteFileWrite: true`）后才可使用 `remote_write` / `remote_edit`；后者默认要求 oldText 唯一匹配。大文件、二进制和上传/下载仍建议用右侧栏 SFTP 面板。远程写入不是原子操作，修改关键配置前先备份。
+原生 `read` / `write` / `edit` / `glob` / `grep` 始终作用于 DSH 主机；远程文件请让模型使用显式的远程文件工具：`remote_read`、`remote_glob`、`remote_grep`。写入默认关闭：在「插件 → 远程工作台 → 允许远程写入」打开开关（或设置 `remoteFileWrite: true`）后才可使用 `remote_write` / `remote_edit`；后者默认要求 oldText 唯一匹配。大文件、二进制和上传/下载仍建议用右侧栏 SFTP 面板。POSIX 目标的写入是「同目录临时文件 + rename」原子替换，并尽量保留原权限位；Windows 目标仍为直接写入；软链目标写穿链接。修改关键配置前仍建议备份。
 
 **命令很慢/超时？**
 远程命令默认 120s，可用远程 shell 工具的 `timeoutMs` 参数（原生 `bash` / `remote_bash` / `remote_pwsh`）或插件配置 `commandTimeoutMs` 调整。连接池会复用连接，第一次会稍慢。超时后如果远端有 `timeout`，整个远端进程组会被终止（TERM 后按 `timeoutKillAfterMs` 再补 KILL）；没有 `timeout` 的服务器（如 macOS）只能停止等待，命令可能还在跑，结果 stderr 会提示这一点。**取消（Esc）不会立即杀远端**，远端仍会计时到自己的 deadline。
@@ -82,10 +82,10 @@ composer 下方的 pill 只读展示本会话各目标的远程执行次数，�
 每个远程工具结果都带 server / target / cwd（如 `web-1:/var/log`），工具卡片也会显示执行的资源；composer 下方的 pill 只统计本会话执行次数。原生 `bash` / `pwsh` 的结果永远来自本机。
 
 **能不能一次让多个资源并行执行？**
-可以，让模型调用 `remote_exec`：每个 task 显式带 `server`，默认并发 4、最多 8，单次最多 8 个 task；每个任务独立超时、独立输出、互不污染，结果按输入顺序返回。它只支持前台命令，长任务仍走后台工具。`remote_bash` / `remote_pwsh` 也各自显式带 `server`，不存在需要先切换的单 active target。
+可以，让模型调用 `remote_exec`：每个 task 显式带 `server`，默认并发 4、最多 8，单次最多 8 个 task；每个任务独立超时、独立输出、互不污染，结果按输入顺序返回。每个 task 也可单独设置 `run_in_background`，需要长任务时不必切回后台工具。`remote_bash` / `remote_pwsh` 也各自显式带 `server`，不存在需要先切换的单 active target。
 
 **怎么跑长时间任务 / 后台服务？**
-让模型带 `run_in_background: true` 调用远程 shell 工具（`remote_bash` / `remote_pwsh`）。工具会立刻返回远端 pid 和日志路径：
+让模型带 `run_in_background: true` 调用远程 shell 工具（`remote_bash` / `remote_pwsh`），或在 `remote_exec` 的某个 task 上设置它。工具会立刻返回远端 pid 和日志路径：
 - POSIX：`tail -f <log>` 看输出，`kill <pid>` 停止；
 - Windows：`Get-Content -LiteralPath '<log>' -Wait` 看输出，`Stop-Process -Id <pid> -Force` 停止。
 后台进程与本次工具调用脱离，调用返回后继续运行；`timeoutMs` 只约束启动调用本身。它不是 DSH 本地 job，`job_*` 工具看不到它。

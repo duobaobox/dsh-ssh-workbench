@@ -4,6 +4,18 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.8] - 2026-11-14
+
+### 变更（远程执行能力补齐）
+
+- `remote_exec` 的每个 task 支持 `run_in_background`：批量任务里可以混跑前台命令和后台进程，后台任务立即返回远端 pid 与日志，其余 task 继续并发；`timeoutMs` 只约束启动，不再需要为长任务单独切到 `remote_bash` / `remote_pwsh`。
+- 远程写入原子化（POSIX）：`remote_write` / `remote_edit` 先写同目录临时文件，再 `rename` 覆盖目标，并尽量保留原权限位；连接中断或写入失败时原文件保持不变。Windows 目标保持直接写入；软链目标写穿链接而不是替换链接。
+- POSIX 后台日志从 `/tmp` 移到 `~/.dsh/ssh-workbench/logs`（`DSH_SSH_WORKBENCH_LOG_DIR` 可覆盖），避免系统 tmp 清理；该目录不可写时自动回退 `/tmp`。
+
+### 文档
+
+- README / quickstart / architecture 同步上述行为；明确 composer 下方 pill 只反映工具调用，后台进程启动后 pill 消失不代表远端进程结束。
+
 ## [1.7.7] - 2026-11-14
 
 ### 新增（工作区文件补齐原生能力）

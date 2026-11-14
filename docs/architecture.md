@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.7）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.8）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -68,15 +68,15 @@ vendor/
 
 ## 多资源并行
 
-`remote_exec({ tasks: [{ server, command, workdir?, timeoutMs? }], concurrency? })` 是插件自有的 `defineTool`，不走 `tools/execute`：
+`remote_exec({ tasks: [{ server, command, workdir?, timeoutMs?, run_in_background? }], concurrency? })` 是插件自有的 `defineTool`，不走 `tools/execute`：
 
 - **显式目标**：每个 task 自己带 `server`，不依赖也不修改任何会话目标状态；`server: "local"` 被拒绝，任务只能落在纳管资源上。
 - **全量预检**：先解析全部 server、方言、workdir、timeout；任一 task 非法则整批拒绝，不会执行一半。
 - **真正并发**：工具声明 `isConcurrencySafe: () => true`，DSH 的 batch 调度会把它和其他 parallel-safe 调用一起放进有界并发池；工具内部再按 `batchConcurrency`（默认 4，最大 8）跨服务器并发。单台服务器仍受 `maxChannelsPerServer` 约束。
 - **逐任务隔离**：每个 task 按自己的 `facts.dialect` 选择 POSIX/Windows 适配器与 guard 规则；超时、传输失败、非零退出码只影响该任务，结果按输入顺序渲染。
 - **输出预算**：一次 batch 共享 `maxBatchOutputBytes`（默认 256 KiB），每个 task 先取 `maxOutputBytes` 与均分预算的较小值，避免一次 fan-out 撑爆上下文。
-- **仅前台**：不支持 `run_in_background`；长任务按目标分别用后台工具或分别在终端里跑。
-- **UI**：composer 下方 pill 是执行账本的只读投影，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。没有执行记录时不显示，因此不存在“切本地后残留”。
+- **后台任务**：每个 task 可单独设置 `run_in_background`；启动后该任务立即返回远端 pid 与日志，其余 task 继续并发执行。
+- **UI**：composer 下方 pill 是执行账本的只读投影，结构对齐 DSH 内置 Token 用量弹窗：标题行「远程执行」+ 本 Session 总次数、0.5px 分隔线、目标名 → 执行次数。不显示成功/失败、用时或模型指标，也不承担切换或打开工作台；它只反映工具调用的开始/结束，后台任务启动后 pill 消失不代表远端进程结束。终端/文件从左侧工作台进入。弹层通过 `react-dom.createPortal` 挂到 `document.body`，避免被 composer 的 stacking context 裁切。没有执行记录时不显示，因此不存在“切本地后残留”。
 
 ## 多宿主与多方言
 
@@ -97,9 +97,9 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 
 `run_in_background: true` 不再报错，而是启动一个**脱离 SSH 会话**的远端进程：
 
-- POSIX：`sh -c '<脚本>'` 内用 `nohup "$SHELL" -lc` 启动命令，stdout/stderr 重定向到 `mktemp /tmp/dsh-ssh-workbench-bg.XXXXXX` 生成的日志；启动器打印 `__SDH_BG_PID__` / `__SDH_BG_LOG__` 标记。
+- POSIX：`sh -c '<脚本>'` 内用 `nohup "$SHELL" -lc` 启动命令，stdout/stderr 重定向到 `~/.dsh/ssh-workbench/logs` 下 `mktemp` 生成的日志（`DSH_SSH_WORKBENCH_LOG_DIR` 可覆盖，目录不可写时回退 `/tmp`）；启动器打印 `__SDH_BG_PID__` / `__SDH_BG_LOG__` 标记。
 - Windows：外层 PowerShell 用 `Start-Process -RedirectStandardOutput/-RedirectStandardError -WindowStyle Hidden -PassThru` 启动内层编码脚本，输出 `__SDH_BG_PID__` / `__SDH_BG_LOG__` / `__SDH_BG_ERR__`。
-- 工具/路由解析标记后返回 pid、日志路径与读取/停止命令；启动失败（没有 pid）返回 `REMOTE_BACKGROUND_FAILED`。
+- 工具/路由解析标记后返回 pid、日志路径与读取/停止命令；`remote_exec` 的每个 task 各自解析并返回自己的 pid/日志；启动失败（没有 pid）返回 `REMOTE_BACKGROUND_FAILED`（原生 bash 路由）或该 task 的 `background start failed` 错误。
 - 远端进程不在 DSH 本地 `job_*` 注册表里：`job_output` 看不到它，模型用 `tail` / `Get-Content` 取输出、`kill` / `Stop-Process` 停止；`timeoutMs` 与取消只作用于启动调用。
 
 ## 关键契约（来自 DSH，非本插件发明）

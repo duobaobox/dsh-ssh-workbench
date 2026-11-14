@@ -69,7 +69,7 @@ test('remote_exec exposes array tasks and a concurrency hint', () => {
   assert.deepEqual(Object.keys(tool.parameters), ['tasks', 'concurrency', 'probe', 'connectTimeoutMs'])
   assert.equal(tool.parameters.tasks.required, true)
   assert.equal(tool.parameters.tasks.items.type, 'object')
-  assert.deepEqual(Object.keys(tool.parameters.tasks.items.properties), ['server', 'command', 'workdir', 'timeoutMs'])
+  assert.deepEqual(Object.keys(tool.parameters.tasks.items.properties), ['server', 'command', 'workdir', 'timeoutMs', 'run_in_background'])
   assert.equal(tool.parameters.tasks.items.properties.server.required, true)
   assert.equal(tool.parameters.tasks.items.properties.command.required, true)
   assert.equal(tool.isConcurrencySafe(), true)
@@ -227,4 +227,48 @@ test('a large task output is truncated at the plugin cap and says so', async () 
   const result = await h.tool.execute({ tasks: [{ server: 'web-1', command: 'cat big.log' }] })
   assert.match(result.text, /\[stdout truncated by the plugin output cap\]/)
   assert.equal(result.text.length <= 16384 + 120, true)
+})
+
+test('remote_exec starts a background task and reports the pid and log', async () => {
+  const h = makeHarness({
+    exec: async () => ({
+      outcome: 'success',
+      exitCode: 0,
+      signal: null,
+      stdout: '__SDH_BG_PID__4242\n__SDH_BG_LOG__/home/demo/.dsh/ssh-workbench/logs/bg.A1\n',
+      stderr: '',
+      durationMs: 1,
+      truncated: { stdout: false, stderr: false },
+    }),
+  })
+  const result = await h.tool.execute({
+    tasks: [{ server: 'web-1', command: 'sleep 99', run_in_background: true }],
+  })
+  assert.equal(h.calls.length, 1)
+  assert.match(h.calls[0].command, /^sh -c /)
+  assert.doesNotMatch(h.calls[0].command, /^timeout /)
+  assert.match(result.text, /background: started/)
+  assert.match(result.text, /pid: 4242/)
+  assert.match(result.text, /read output: tail -f/)
+  assert.match(result.text, /timeoutMs does not apply/)
+  assert.equal(h.activities[0].outcome, 'success')
+})
+
+test('remote_exec reports a background task that never started', async () => {
+  const h = makeHarness({
+    exec: async () => ({
+      outcome: 'success',
+      exitCode: 0,
+      signal: null,
+      stdout: 'nohup: not found\n',
+      stderr: '',
+      durationMs: 1,
+      truncated: { stdout: false, stderr: false },
+    }),
+  })
+  const result = await h.tool.execute({
+    tasks: [{ server: 'web-1', command: 'sleep 99', run_in_background: true }],
+  })
+  assert.match(result.text, /error: background start failed: nohup: not found/)
+  assert.equal(h.activities[0].outcome, 'failed')
 })
