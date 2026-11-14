@@ -312,6 +312,28 @@ test('the bundle config form exposes both the sidebar and remote-write switches'
   assert.match(bundleSource, /files\.openInApp/)
 })
 
+test('the local files page keeps search and the open-in-app split button', () => {
+  // Search reuses the Host workspace search, the same one the native page calls.
+  assert.match(bundleSource, /ctx\.inject\(\['remote\.workspaceFiles'\]/)
+  assert.match(bundleSource, /files\.search\(sessionId, request\)/)
+  assert.match(bundleSource, /data-sdh-files-search-toggle/)
+  assert.match(bundleSource, /data-sdh-files-search-bar/)
+  assert.match(bundleSource, /data-sdh-files-search-results/)
+  assert.match(bundleSource, /data-sdh-files-search-row/)
+  assert.match(bundleSource, /String\(query \|\| ''\)\.trim\(\)/)
+  assert.match(bundleSource, /respectGitignore: true/)
+  assert.match(bundleSource, /includeHidden: showHidden === true/)
+  assert.match(bundleSource, /FILES_SEARCH_EXCLUDED/)
+  // "Open in app" mirrors the native split button: default app plus a menu.
+  assert.match(bundleSource, /data-sdh-open-in-app/)
+  assert.match(bundleSource, /session\.workspacePathApplications\(\{ path \}\)/)
+  assert.match(bundleSource, /openWorkspacePath\(\{ path: dir, application: id \}\)/)
+  assert.match(bundleSource, /files\.openInAppWith/)
+  assert.match(bundleSource, /files\.openInAppMore/)
+  assert.match(bundleSource, /files\.openInAppDefault/)
+  assert.match(bundleSource, /dsh-ssh-workbench-files-search-field/)
+})
+
 test('the sidebar switch removes the workbench rail entry but keeps the rest', () => {
   const { ctx, registered } = makeClientContext()
   const exports = loadBundle({ localStorage: { 'dsh-ssh-workbench.sidebar.enabled': '0' } }).factory(makeRequire())

@@ -4,6 +4,14 @@
 
 > 产品对外名称：**SSH Workbench / 远程工作台**（v1.6.4 起统一）。包名 `dsh-ssh-workbench`、数据目录 `~/.dsh/ssh-workbench`。历史条目中的旧标识已统一为当前名称，便于检索。
 
+## [1.7.7] - 2026-11-14
+
+### 新增（工作区文件补齐原生能力）
+
+- 页头补回搜索：走 Host 的 `workspaceFiles/search`（ripgrep），按文件名或路径匹配，输入即搜、结果按层级缩进、右侧显示所在目录，支持清空与 Esc 关闭；结果过多或搜索未完成时给出提示。默认排除 `node_modules`、`dist` 等目录，与官方一致。
+- 「在应用中打开」由单个按钮升级为官方同款拆分按钮：主按钮用默认应用打开当前目录并显示该应用图标与名称，右侧箭头列出 Host 上可用的全部应用（来自 `session.workspacePathApplications`，含 Finder/VS Code/GitHub Desktop/终端等），选哪个用哪个。没有可用应用列表时回退为单按钮，按系统默认应用打开。
+- 两处都沿用 `remote.workspaceFiles` / `remote.session` 命名空间，只读取 DSH 已提供的宿主能力，不新增后端接口。
+
 ## [1.7.6] - 2026-11-14
 
 ### 变更（设置页改为即时生效）
