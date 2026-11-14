@@ -736,3 +736,38 @@ test('filesystem failures name the operation and the path', async () => {
   assert.equal(localListed.status, 400)
   assert.match(localListed.json.error, /list "\/workspace\/missing" failed: ENOENT: no such file or directory/)
 })
+
+test('a session cwd outside the local pane root is browsable in hierarchy mode', async () => {
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'sdh-workbench-session-'))
+  const sessionCwd = path.join(root, 'lumina')
+  await fsp.mkdir(sessionCwd, { recursive: true })
+  await fsp.writeFile(path.join(sessionCwd, 'hello.txt'), 'hi')
+  try {
+    const { deps, state } = makeDeps()
+    deps.getSessionCwd = (sessionId) => (sessionId === 'session-1' ? sessionCwd : undefined)
+    const handler = createRoutes(deps)
+
+    const listed = await call(handler, 'POST', '/dsh-ssh-workbench/sftp/list', {
+      ref: '__local__',
+      session: 'session-1',
+      path: sessionCwd,
+    })
+    assert.equal(listed.status, 200)
+    assert.deepEqual(listed.json.result.map((entry) => entry.name), ['hello.txt'])
+
+    const home = await call(handler, 'GET', '/dsh-ssh-workbench/localfs/root?session=session-1')
+    assert.equal(home.status, 200)
+    assert.equal(home.json.result.root, await fsp.realpath(sessionCwd))
+
+    const outside = await call(handler, 'POST', '/dsh-ssh-workbench/sftp/list', {
+      ref: '__local__',
+      session: 'session-1',
+      path: root,
+    })
+    assert.equal(outside.status, 400)
+    assert.match(outside.json.error, /outside the local workspace root/)
+    assert.equal(state.localfsCalls.length, 0)
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})

@@ -489,3 +489,21 @@ test('the file preview renders tables, raster and svg, and admits truncation', (
   assert.match(bundleSource, /const imageTruncated = showImage && byteTruncated/)
   assert.match(bundleSource, /'files\.tableRowsPartial'/)
 })
+
+test('the hierarchy page scopes local file requests to the session workspace', () => {
+  // Windows workspaces can sit outside the local-pane root, so every local
+  // file request from the hierarchy page carries the session id.
+  assert.match(bundleSource, /const localSession = localMode && typeof props\.sessionId === 'string' && props\.sessionId \? props\.sessionId : undefined/)
+  assert.match(bundleSource, /const filesPost = \(path, payload\) => post\(path, localSession \? \{ \.\.\.payload, session: localSession \} : payload\)/)
+  assert.match(bundleSource, /filesPost\('\/sftp\/list'/)
+  assert.match(bundleSource, /filesPost\('\/sftp\/open-read'/)
+  // The full workspace path is shown, with the Windows separator between
+  // breadcrumb segments.
+  assert.match(bundleSource, /rootLabel: cwd/)
+  assert.match(bundleSource, /pathSeparatorFor\(navRoot\)/)
+  assert.match(bundleSource, /foldedRoot/)
+  assert.match(bundleSource, /uiWorkspaceService/)
+  assert.match(bundleSource, /pickDirectory\(\)/)
+  assert.match(bundleSource, /chooseDirectory = async/)
+  assert.match(bundleSource, /files\.pickDirectory/)
+})
