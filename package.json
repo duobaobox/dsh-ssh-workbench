@@ -1,6 +1,6 @@
 {
   "name": "dsh-ssh-workbench",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "description": "远程工作台：SSH 终端、本地与远程文件、@服务器 对话执行；显式目标的远程 shell 与 read/glob/grep，Windows 宿主和目标都能用。DeepSeek Harness SSH workbench plugin.",
   "type": "module",
   "main": "lib/index.js",
@@ -39,7 +39,9 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-context-menu"
+        "@deepseek-ai/dsh-client-ui-context-menu",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller"
       ]
     }
   },
@@ -50,6 +52,8 @@
     "@deepseek-ai/dsh-client-ui-renderer": ">=0.2.1-rc.1 <0.3.0",
     "@deepseek-ai/dsh-client-locale": ">=0.2.1-rc.1 <0.3.0",
     "@deepseek-ai/dsh-client-ui-context-menu": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-api-remotes": ">=0.2.1-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-api-session-controller": ">=0.2.1-rc.1 <0.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -61,6 +65,12 @@
       "optional": true
     },
     "@deepseek-ai/dsh-client-ui-context-menu": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-remotes": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-api-session-controller": {
       "optional": true
     }
   },

@@ -272,7 +272,9 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
 
 test('the bundle config form exposes the system file hierarchy switch', () => {
   assert.match(bundleSource, /workbench\.hierarchyTitle/)
-  assert.match(bundleSource, /systemFileHierarchy: hierarchyEnabled === true/)
+  // Flipping a switch commits that one field straight away; the page has no
+  // Save button, so the patch must be built from the new value itself.
+  assert.match(bundleSource, /commit\(\{ systemFileHierarchy: next \}\)/)
   assert.match(bundleSource, /prefsBody\?\.config\?\.systemFileHierarchy/)
   assert.match(bundleSource, /'data-sdh-switch': options\.key/)
 })
@@ -298,10 +300,16 @@ test('the bundle config form exposes both the sidebar and remote-write switches'
   assert.match(bundleSource, /workbench\.writeTitle/)
   assert.match(bundleSource, /workbench\.writeHint/)
   assert.match(bundleSource, /'data-sdh-switch': options\.key/)
-  assert.match(bundleSource, /remoteFileWrite: writeEnabled === true/)
+  assert.match(bundleSource, /commit\(\{ remoteFileWrite: next \}\)/)
   assert.match(bundleSource, /prefsBody\?\.config\?\.remoteFileWrite/)
   assert.match(bundleSource, /workbench\.writeNeedRestart/)
   assert.ok(bundleSource.includes('must be a boolean'), 'legacy prefs schema errors map to the restart hint')
+  // The form is fixed by switches alone; no explicit save button remains.
+  assert.doesNotMatch(bundleSource, /disabled: busy \|\| !loaded/)
+  assert.match(bundleSource, /ctx\.inject\(\['remote\.session'\]/)
+  assert.match(bundleSource, /session\.openWorkspacePath\(\{ path \}\)/)
+  assert.match(bundleSource, /localChrome/)
+  assert.match(bundleSource, /files\.openInApp/)
 })
 
 test('the sidebar switch removes the workbench rail entry but keeps the rest', () => {
