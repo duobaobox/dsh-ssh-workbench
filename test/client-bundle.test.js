@@ -169,7 +169,8 @@ test('client apply registers settings, right-panel body and sidebar tab type', (
   assert.ok(slots.includes('sidebar.right.pane.tab'), 'missing sidebar.right.pane.tab body')
   assert.ok(slots.includes('sidebarRightTabs'), 'missing sidebarRightTabs registration')
   const tabs = registered.filter((entry) => entry.slot === 'sidebarRightTabs')
-  assert.deepEqual(tabs.map((entry) => entry.definition.kind).sort(), ['sdh-file', 'sdh-files', 'sdh-servers', 'sdh-system-files'])
+  // The hierarchy page registers later, only when the switch is on (see below).
+  assert.deepEqual(tabs.map((entry) => entry.definition.kind).sort(), ['sdh-file', 'sdh-files', 'sdh-servers'])
   const serversTab = tabs.find((entry) => entry.definition.kind === 'sdh-servers')
   assert.equal(serversTab.definition.id, 'dsh-ssh-workbench/servers')
   const filesTab = tabs.find((entry) => entry.definition.kind === 'sdh-files')
@@ -277,19 +278,24 @@ test('the bundle config form exposes the system file hierarchy switch', () => {
   assert.match(bundleSource, /'data-sdh-switch': options\.key/)
 })
 
-test('the hierarchical files page is an additive tab, not a takeover', () => {
-  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'sdh-system-files'/, 'registers its own tab kind')
-  assert.match(bundleSource, /kind: 'sdh-system-files'\s*,\s*\n\s*keepMounted: true/)
-  assert.doesNotMatch(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'files'/, 'must not shadow the native files kind')
-  assert.match(bundleSource, /sidebar\.right\.tab\.files\.actions/)
-  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/hierarchy'/)
-  assert.match(bundleSource, /openHierarchyTab\(sessionId\)/)
-  assert.match(bundleSource, /openTabIn\(sessionId, 'sdh-system-files'\)/)
+test('the hierarchy page takes over the native files kind with the official chrome', () => {
+  assert.match(bundleSource, /id: 'dsh-ssh-workbench\/system-files'\s*,\s*\n\s*kind: 'files'/, 'shadows the native files kind')
+  assert.match(bundleSource, /kind: 'files'\s*,\s*\n\s*keepMounted: true/)
+  assert.match(bundleSource, /syncHierarchyTab\(/)
+  assert.match(bundleSource, /systemFilesSync = syncHierarchyTab/)
+  assert.match(bundleSource, /config\?\.systemFileHierarchy === true/)
+  assert.match(bundleSource, /officialChrome: true/)
+  assert.match(bundleSource, /primitives\.PathLabel/)
+  assert.match(bundleSource, /data-sdh-files-path-label/)
   assert.match(bundleSource, /lockRoot: true/)
   assert.match(bundleSource, /openNative: true/)
   assert.match(bundleSource, /dsh-resource:\/\/file\/session\/\$\{encodeURIComponent\(props\.sessionId\)\}/)
   assert.match(bundleSource, /withinRoot\(target\)/)
   assert.match(bundleSource, /files\.outsideRoot/)
+  // The additive entry it replaced must be gone.
+  assert.doesNotMatch(bundleSource, /sdh-hierarchy-action/)
+  assert.doesNotMatch(bundleSource, /openHierarchyTab/)
+  assert.doesNotMatch(bundleSource, /sidebar\.right\.tab\.files\.actions/)
 })
 
 test('the bundle config form exposes both the sidebar and remote-write switches', () => {
