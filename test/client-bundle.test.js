@@ -285,6 +285,13 @@ test('the hierarchical system files page takes over the native files kind', () =
   assert.match(bundleSource, /dsh-resource:\/\/file\/session\/\$\{encodeURIComponent\(props\.sessionId\)\}/)
   assert.match(bundleSource, /withinRoot\(target\)/)
   assert.match(bundleSource, /files\.outsideRoot/)
+  // The guide entry must reuse DSH's own slot and artwork so the tab keeps its
+  // original position on the guide page and reads like the native one.
+  assert.match(bundleSource, /id: 'workspace'\s*,\s*\n\s*commandId: 'workspace\.files'/)
+  assert.match(bundleSource, /order: 10\s*,\s*\n\s*title: \(\) => t\('files\.systemTitle'\)/)
+  assert.match(bundleSource, /primitives\.GuideArtworkFiles/)
+  // The tab title uses the official folder glyph rather than bespoke artwork.
+  assert.match(bundleSource, /h\(FileTypeIcon, \{ kind: 'folder', size: 16/)
 })
 
 test('the bundle config form exposes both the sidebar and remote-write switches', () => {
