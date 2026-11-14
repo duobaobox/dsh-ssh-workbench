@@ -74,7 +74,13 @@ export class FakeClient extends EventEmitter {
           stream.emit('error', new Error('ECONNRESET'))
           return
         }
-        const text = FakeClient.outputFor ? FakeClient.outputFor(command) : `out:${command}`
+        const text = FakeClient.outputFor
+          ? FakeClient.outputFor(command)
+          : command === 'uname -s'
+            ? 'Linux\n'
+            : command === 'cmd.exe /c ver'
+              ? 'Microsoft Windows [Version 10.0.26100.1]\r\n'
+              : `out:${command}`
         stream.emit('data', Buffer.from(text))
         if (FakeClient.stderrFor) stream.stderr.emit('data', Buffer.from(FakeClient.stderrFor(command)))
         const code = FakeClient.codeFor ? FakeClient.codeFor(command) : 0

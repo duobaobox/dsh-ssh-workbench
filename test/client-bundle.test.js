@@ -422,10 +422,26 @@ test('Windows local paths keep their separator in breadcrumbs and preview names'
   assert.match(bundleSource, /relative\.split\(\/\[\\\\\/\]\+\/\)/)
   assert.match(bundleSource, /baseNameOf\(params\.path\)/)
   assert.doesNotMatch(bundleSource, /path\.split\('\/'\)\.pop\(\)/)
-  // Resource cards show the dialect badge (Linux/Windows), not a raw token.
-  assert.match(bundleSource, /settings\.platformPosix/)
-  assert.match(bundleSource, /settings\.platformWindows/)
-  assert.match(bundleSource, /platformText\(server\.dialect \?\? server\.platform\)/)
+  // Resource cards keep the hostname but no redundant OS chip; long display
+  // names collapse after ten characters.
+  assert.match(bundleSource, /const shortServerName = \(name\) =>/)
+  assert.match(bundleSource, /chars\.length > 10 \? chars\.slice\(0, 10\)\.join\(''\) \+ '…'/)
+  assert.doesNotMatch(bundleSource, /const systemLabel = \(server\) =>/)
+  assert.match(bundleSource, /hostnameOf\(server\)/)
+})
+
+test('failed connection tests surface through the DSH shell Toast', () => {
+  // DSH owns transient notices: use its Toast primitive instead of painting a
+  // plugin-local banner, so placement, timing and theming match the shell.
+  assert.match(bundleSource, /const \[toast, setToast\] = useState\(null\)/)
+  assert.match(bundleSource, /const showToast = useCallback\(\(text\) =>/)
+  assert.match(bundleSource, /const Toast = primitives && primitives\.Toast/)
+  assert.match(bundleSource, /onDone: \(\) => dismissToast\(toast\.seq\)/)
+  assert.match(bundleSource, /showToast\(t\('panel\.testFailed', \{ msg: result\.message \|\| result\.errorCode \|\| 'failed' \}\)\)/)
+  assert.match(bundleSource, /showToast\(t\('panel\.testFailed', \{ msg: messageOf\(cause\) \}\)\)/)
+  // The toast host is present on both the sidebar panel and the settings page.
+  assert.match(bundleSource, /const toastNode = toast/)
+  assert.equal((bundleSource.match(/^\s*toastNode,$/gm) ?? []).length, 2)
 })
 
 test('the composer execution dock mirrors the usage card', () => {

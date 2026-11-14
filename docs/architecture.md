@@ -1,4 +1,4 @@
-# SSH Workbench（dsh-ssh-workbench）架构（v1.7.9）
+# SSH Workbench（dsh-ssh-workbench）架构（v1.7.10）
 
 > 产品定位与用法见 [README.md](../README.md)；本文只讲实现分层。
 
@@ -88,7 +88,7 @@ DSH 的内置 shell 工具按宿主平台二选一：POSIX 宿主有 `bash`、�
 | Windows | `remote_pwsh` | `win32Adapter`（UTF-16LE `-EncodedCommand`） |
 | 混合（多目标） | `remote_exec` | 逐 task 按各自方言选适配器 |
 
-- 目标方言由连接后的探测决定（`uname -s` 成功 → posix；否则 `cmd /c ver` 成功 → windows），写入 `facts.dialect`；`platform` 字段只作探测前提示。`effectiveDialect()` 是唯一读取入口。
+- 目标方言由连接后的探测决定（`uname -s` 成功 → posix；否则 `cmd.exe /c ver` 成功 → windows），写入 `facts.dialect`；`platform` 字段只作探测前提示。`effectiveDialect()` 是唯一读取入口。
 - 方言决定命令构造：POSIX 用 `cd -- ... && ...` + 可选 `timeout` 包装；Windows 用 UTF-16LE base64 的 `powershell -EncodedCommand` 脚本（内含 UTF-8 输出、`Set-Location`、显式退出码），没有远端 `timeout`。
 - `remote_bash` 与 `remote_pwsh` 互相拒绝错误方言并给出改用建议；即使 `platform` 手填错误，探测结果也会纠正。
 - `ctx.tools.guard()` 按每个显式 server 的方言选择 POSIX 或 PowerShell 规则集；facts 缺失时两套都跑。

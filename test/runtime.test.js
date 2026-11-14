@@ -181,6 +181,18 @@ test('SFTP errors are normalized and reject fast (no recursive normalizer)', asy
   await runtime.close()
 })
 
+test('runtime test() detects Windows even when the record says posix', async () => {
+  const { runtime } = makeRuntime()
+  const windowsServer = { ...server, name: 'win-1', platform: 'posix', facts: {} }
+  FakeClient.outputFor = (command) => (command.includes('ver') ? 'Microsoft Windows [Version 10.0.26100.1]' : "'uname' is not recognized")
+  FakeClient.codeFor = (command) => (command.includes('ver') ? 0 : 1)
+  const result = await runtime.test(windowsServer)
+  assert.equal(result.ok, true)
+  assert.equal(result.platform, 'windows')
+  assert.equal(result.dialect, 'windows')
+  await runtime.close()
+})
+
 test('runtime test() uses one handshake and returns latency', async () => {
   const { runtime } = makeRuntime()
   const result = await runtime.test(server)

@@ -17,18 +17,18 @@ DeepSeek Harness 的**远程工作台**：SSH 终端、本地与远程文件、@
 
 | 能力 | 说明 |
 |---|---|
-| 远程资源纳管 | 右侧栏/设置页：增删改查、连接测试、host key 指纹确认、密码/私钥凭据（0600 存储）；连接测试/选中目标后会采集 hostname 等信息（hostname 仅用于目标上下文；内核/磁盘只存储，不在列表展示） |
+| 远程资源纳管 | 右侧栏/设置页：增删改查、连接测试、host key 指纹确认、密码/私钥凭据（0600 存储）；连接测试/选中目标后会采集 hostname 等信息（hostname 显示在资源卡片；内核/磁盘只存储，不在列表展示） |
 | `@资源` 提示 | 消息里 `@web-1` 会让模型在工具调用里带上 `server: "web-1"`（资源名支持中文/非 ASCII）；`@` 多个资源时用 `remote_exec` 一次并行执行。`@` 只是本轮的提示，不是全局 active target；模型仍可按上下文显式选择其他资源 |
 | 执行目标 | 每个远程工具调用自己带 `server`：`remote_bash({ server, command })`、`remote_pwsh({ server, command })`、`remote_exec({ tasks: [{ server, command }] })`。不存在“当前目标”，因此切回本机只是改调原生 `bash` / `pwsh`，不需要 `ssh_workbench_target`，也不会把本地命令误发到远程 |
 | Windows 宿主 | Windows 上的 DSH 没有原生 `bash`（DSH 按平台禁用）：插件在两种宿主上都注册 `remote_bash` / `remote_pwsh` / `remote_exec`，所以 Windows 宿主也能操作 POSIX 目标；原生 `pwsh` 仍只作用于本机 |
 | Windows 目标 | Windows 目标经插件自有的 `remote_pwsh` 执行：命令包成 UTF-16LE 的 `-EncodedCommand` 脚本（避免引号转义），强制 UTF-8 输出并回传真实退出码；PowerShell 危险命令另有黑名单 |
-| 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
+| 方言探测 | 目标实际是 POSIX 还是 Windows 由连接后的 `uname -s` / `cmd.exe /c ver` 探测并写入 `facts.dialect`，不依赖手工填写的 `platform`；探测结果用于选择 `remote_bash` / `remote_pwsh`、超时包装和目标上下文文案 |
 | 远程文件工具 | `remote_read` / `remote_glob` / `remote_grep` 直接操作远程文件（显式 `server`）；`remote_write` / `remote_edit` 默认关闭，可在插件管理的「允许远程写入」开关或 `remoteFileWrite` 配置里开启。原生 `read`/`write`/`edit`/`glob`/`grep` 仍只作用于本地 |
 | `remote_exec` 多资源并行 | 一次调用传 `tasks: [{ server, command, workdir?, timeoutMs?, run_in_background? }]`；每个任务**显式指定目标**，按各自方言选择 POSIX/Windows 执行器，并发执行（默认 4，上限 8），逐任务超时、输出上限与错误隔离；不依赖也不修改任何会话目标状态。任务可单独立 `run_in_background`，返回远端 pid 与日志 |
 | `remote_bash` / `remote_pwsh` | `command`、`workdir`（绝对路径 / `~/x` / 相对路径）、`timeoutMs`、取消沿用同一套语义；POSIX 目标超时后远端命令组会被终止（远端有 `timeout` 时含 `-k` 补 KILL），Windows 目标只能客户端停止等待 |
 | 结果输出 | 原生 `bash` / `pwsh` 保留 DSH 原生终端卡片；`remote_bash` / `remote_pwsh` / `remote_exec` 返回带 server / cwd / 退出码 / stdout / stderr 的文本结果 |
 | 后台任务 | `run_in_background: true` 在远端起**脱离会话**的进程：POSIX 用 `nohup` 重定向到 `~/.dsh/ssh-workbench/logs`（`DSH_SSH_WORKBENCH_LOG_DIR` 可覆盖，不可写时回退 `/tmp`），Windows 用 `Start-Process` + 日志文件；结果返回 pid、日志路径和读取/停止命令（`tail -f` / `kill`、`Get-Content -Wait` / `Stop-Process`）。它不注册到 DSH 本地 `job_*` 注册表，进程在工具调用返回后继续运行 |
-| 平台徽标 | 资源列表/设置页显示 **Linux / Windows** 徽标（来自连接后探测的 `facts.dialect`，不是手填字段）；连接测试结果也显示探测到的平台 |
+| 资源卡片 | 显示名称、用户名@地址、主机名和连接状态；名称超过 10 个字符时省略显示（悬停看完整名称）；不再显示平台徽标，系统类型只在内部用于选择执行器 |
 | 执行统计 | composer 下方的 pill 只读展示本会话的远程执行次数，结构对齐 DSH Token 用量弹窗：标题「远程执行」+ 总次数、分隔线、目标名 → 次数；没有执行时不显示。执行中 pill 会实时显示当前目标（单目标为 `host165 · 执行中`，多目标为 `2 个目标 · 执行中`），1.5 秒轮询；它不切换目标、不打开工作台，也不显示成功/失败或用时 |
 | 远程工作台 | 左侧导航的独立页面：左侧终端（本地终端 / 远程 SSH 终端），右侧文件管理（本地用户主目录 / 远程 SFTP，远程默认打开登录 home），文件可**在工作台内直接预览**，拖动分隔条调整宽度；每个页签一个终端会话，仅活动页签轮询、非活动页签暂停并在切回时续读（UI 能力，不占模型工具） |
 | 侧边栏开关 | 插件管理 → 远程工作台 → 页面里的「在侧边栏显示远程工作台」可关闭左侧导航入口；关闭后 `@资源名` 远程执行、设置页与模型工具不受影响 |
@@ -50,7 +50,7 @@ dsh plugin --profile desktop add dsh-ssh-workbench
 ```bash
 npm test
 npm run pack
-# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.9.tgz
+# 然后在 DSH 的插件管理里安装 dist/dsh-ssh-workbench-1.7.10.tgz
 ```
 
 发布包是**自包含**的：SSH 传输依赖（纯 JS 的 ssh2 及其依赖）已放在 `vendor/` 里随包携带，安装时不会运行 `node-gyp`、不需要 Xcode Command Line Tools，也不会额外下载依赖；包体积因此略大（约 1.1 MB），换来任何机器开箱即装。组件与许可证见 `vendor/NOTICE.md`。

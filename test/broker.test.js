@@ -170,6 +170,21 @@ test('broker test() uses a single handshake and keeps the connection warm', asyn
   await broker.closeAll()
 })
 
+test('broker test() falls back to the other probe when the platform hint is wrong', async () => {
+  const { broker } = makeBroker()
+  // A Windows host saved with the default posix hint: `uname` must fail, then
+  // `cmd.exe /c ver` succeeds and decides the reported dialect.
+  const windowsServer = { ...server, name: 'win-1', platform: 'posix' }
+  FakeClient.outputFor = (command) => (command.includes('ver') ? 'Microsoft Windows [Version 10.0.26100.1]' : "'uname' is not recognized")
+  FakeClient.codeFor = (command) => (command.includes('ver') ? 0 : 1)
+  const result = await broker.test(windowsServer)
+  assert.equal(result.ok, true)
+  assert.equal(result.platform, 'windows')
+  assert.equal(result.dialect, 'windows')
+  assert.deepEqual(FakeClient.instances[0].commands, ['uname -s', 'cmd.exe /c ver'])
+  await broker.closeAll()
+})
+
 test('connectionPool:false falls back to one connection per call', async () => {
   const { broker } = makeBroker({ connectionPool: false })
   await broker.exec(server, 'echo one')

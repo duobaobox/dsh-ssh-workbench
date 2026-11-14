@@ -10,7 +10,7 @@ npm test
 npm run pack
 ```
 
-然后安装 `dist/dsh-ssh-workbench-1.7.9.tgz`。安装后重启/重载插件。
+然后安装 `dist/dsh-ssh-workbench-1.7.10.tgz`。安装后重启/重载插件。
 
 插件管理 → 远程工作台里可以打开「系统文件浏览使用层级模式」：右侧栏「工作区文件」会换成插件的层级浏览器，范围仅限当前会话目录；默认关闭。
 
@@ -90,8 +90,8 @@ composer 下方的 pill 只读展示本会话各目标的远程执行次数，�
 - Windows：`Get-Content -LiteralPath '<log>' -Wait` 看输出，`Stop-Process -Id <pid> -Force` 停止。
 后台进程与本次工具调用脱离，调用返回后继续运行；`timeoutMs` 只约束启动调用本身。它不是 DSH 本地 job，`job_*` 工具看不到它。
 
-**资源列表里的 Linux / Windows 徽标是什么？**
-连接后自动探测到的目标平台（`uname -s` / `cmd /c ver`），不是表单里手填的 `platform`；测试连接的结果里也会显示。旧资源第一次连接前显示的是提示值，探测完成后自动更新。
+**资源卡片上显示什么？**
+名称、`用户名@地址`、主机名和连接状态。名称超过 10 个字符时省略显示，悬停可看完整名称；编辑表单不受影响。卡片不再显示 Linux / Windows 徽标，系统类型只在内部用于选择执行器（`uname -s` / `cmd.exe /c ver` 探测，结果写入 `facts.dialect`）；连接测试结果里仍会显示探测到的平台。
 
 **危险命令被拒？**
 `rm -rf /`、`mkfs`、`dd of=/dev/*`、分区工具、改根目录权限等会被黑名单直接拦截；引号/反斜杠、路径变体（尾斜杠、`//`、`..`）、`$()`/`eval` 都会先还原再判断。这是兜底，不是权限边界；`bash -c`、base64、脚本文件等仍可能绕过，其他命令由 DSH 审批预设决定是否询问。
@@ -103,7 +103,7 @@ composer 下方的 pill 只读展示本会话各目标的远程执行次数，�
 需要先在 Windows 目标上启用 OpenSSH Server（系统可选功能，管理员 PowerShell：`Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`，然后 `Start-Service sshd`、`Set-Service -Name sshd -StartupType Automatic`）。插件连接后会探测方言，Windows 目标经 `remote_pwsh` 执行 PowerShell 命令；建议把默认 shell 设为 PowerShell。文件面板/连接测试/SSH 终端不受影响。
 
 **方言（POSIX / Windows）要手动填吗？**
-不用。连接测试或选中目标时会执行 `uname -s`（POSIX）和 `cmd /c ver`（Windows）探测，结果写入 `facts.dialect`，之后自动选择 `remote_bash` / `remote_pwsh` 与对应上下文。清单里的 `platform` 字段只是探测前的提示值。
+不用。连接测试或选中目标时会执行 `uname -s`（POSIX）和 `cmd.exe /c ver`（Windows）探测，结果写入 `facts.dialect`，之后自动选择 `remote_bash` / `remote_pwsh` 与对应上下文。清单里的 `platform` 字段只是探测前的提示值。
 
 **Windows 上的 DSH 宿主？**
 Windows 版 DSH 没有内置 `bash`（DSH 按平台禁用），插件会在该宿主上注册自有的 `remote_bash` 工具用于 POSIX 目标；用法与 POSIX 宿主上的原生 `bash` 路由一致（`@资源名`、`workdir`、`timeoutMs`），原生的 `pwsh` 始终保持本机语义。Windows 目标在两种宿主上都走 `remote_pwsh`。
